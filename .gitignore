@@ -46,7 +46,7 @@ checkpoints/
 *.pt
 
 # --- Data Files (large stuff -> use DVC or Zenodo instead) ---
-data/
+/data/
 datasets/
 *.nc
 *.grib
