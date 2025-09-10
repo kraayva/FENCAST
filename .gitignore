@@ -1,3 +1,6 @@
+# --- Other ---
+scratchwork/
+
 # --- Python Basics ---
 __pycache__/
 *.py[cod]
