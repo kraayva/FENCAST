@@ -1,0 +1,12 @@
+# Core packages
+cdsapi
+netCDF4
+xarray
+numpy
+
+# Data science & ML
+scikit-learn
+matplotlib
+
+# Development tools
+jupyterseaborn
