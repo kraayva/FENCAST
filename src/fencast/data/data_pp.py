@@ -34,7 +34,7 @@ df_day.to_csv(data_file_out, index=False)
 # ---------------------------------------
 
 # load ERA5 data
-ds_era5 = xr.open_zarr('gs://weatherbench2/datasets/era5/1959-2023_01_10-wb13-6h-1440x721_with_derived_variables.zarr')
+ds_era5 = xr.open_zarr(cfg["era5_dataset_url"])
 
 # cut out Germany
 ds_era5 = ds_era5.sel(latitude=slice(cfm["ERA5_region"]["lat_min"], cfm["ERA5_region"]["lat_max"]),
