@@ -9,4 +9,9 @@ scikit-learn
 matplotlib
 
 # Development tools
-jupyterseaborn
+jupyter
+ipykernel
+gcloud
+zarr
+fsspec
+gcsfs
