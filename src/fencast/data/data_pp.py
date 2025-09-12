@@ -15,8 +15,8 @@ cfm = load_config("datapp_de")
 # ---------------------------------------
 
 # load data
-data_file = cfg["data_raw_dir"] + "/cfr_NUTS2-DE.csv"
-df = pd.read_csv(data_file)
+target_data_raw = cfm["target_data_raw"]
+df = pd.read_csv(target_data_raw)
 
 # filter for 12:00
 df_day = df[df['Date'].str.endswith('12:00:00')].copy()
@@ -34,8 +34,15 @@ df_day.to_csv(data_file_out, index=False)
 # ---------------------------------------
 
 # load ERA5 data
-ds_era5 = xr.open_zarr(cfg["era5_dataset_url"])
+ds_era5 = xr.open_zarr(cfm["era5_dataset_url"])
 
-# cut out Germany
-ds_era5 = ds_era5.sel(latitude=slice(cfm["ERA5_region"]["lat_min"], cfm["ERA5_region"]["lat_max"]),
-                       longitude=slice(cfm["ERA5_region"]["lon_min"], cfm["ERA5_region"]["lon_max"]))
+# cut out region
+ds_era5 = ds_era5.sel(latitude=slice(cfm["feature_region"]["lat_max"], cfm["feature_region"]["lat_min"]),
+                       longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+
+ds_era5 = ds_era5[cfm["feature_variables"].keys()] # filter variables
+ds_era5 = ds_era5.sel(level=cfm["feature_level"]) # filter levels
+ds_era5 = ds_era5.sel(time=ds_era5['time'].dt.hour == 12) # filter time to 12:00 only
+
+output_path = cfg["data_processed_dir"] + "/era5_de.zarr"
+ds_era5.to_zarr(output_path)
