@@ -16,3 +16,5 @@ zarr
 fsspec
 gcsfs
 dask
+torch
+torchvision

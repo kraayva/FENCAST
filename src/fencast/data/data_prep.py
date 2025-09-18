@@ -1,7 +1,16 @@
+#%% initial setup
+from click import progressbar
 import pandas as pd
 import xarray as xr
 import yaml
 import numpy as np
+import os
+from pathlib import Path
+from dask.diagnostics import ProgressBar
+from itertools import zip_longest
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+os.chdir(PROJECT_ROOT)
 
 def load_config(name="global"):
     with open(f"configs/{name}.yaml", "r") as f:
@@ -10,6 +19,7 @@ def load_config(name="global"):
 cfg = load_config()
 cfm = load_config("datapp_de")
 
+#%%
 # ---------------------------------------
 # ------------- TARGET DATA -------------
 # ---------------------------------------
@@ -29,6 +39,7 @@ df_day = df_day[(df_day['Date'] >= cfm["time_start"]) & (df_day['Date'] <= cfm["
 data_file_out = cfg["data_processed_dir"] + "/cfr_NUTS2-DE_daily.csv"
 df_day.to_csv(data_file_out, index=False)
 
+#%%
 # ---------------------------------------
 # ------------- ERA5 DATA ---------------
 # ---------------------------------------
@@ -37,12 +48,23 @@ df_day.to_csv(data_file_out, index=False)
 ds_era5 = xr.open_zarr(cfm["era5_dataset_url"])
 
 # cut out region
-ds_era5 = ds_era5.sel(latitude=slice(cfm["feature_region"]["lat_max"], cfm["feature_region"]["lat_min"]),
-                       longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+new_ds_era5 = (
+    ds_era5
+    .sel(latitude=slice(cfm["feature_region"]["lat_max"], cfm["feature_region"]["lat_min"]),
+         longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+    [cfm["feature_variables"].keys()]
+    .sel(level=cfm["feature_level"])
+    .sel(time=ds_era5['time'].dt.hour == 12)
+)
 
-ds_era5 = ds_era5[cfm["feature_variables"].keys()] # filter variables
-ds_era5 = ds_era5.sel(level=cfm["feature_level"]) # filter levels
-ds_era5 = ds_era5.sel(time=ds_era5['time'].dt.hour == 12) # filter time to 12:00 only
+#%% create dataset dictionary
+era5_datasets = {var: new_ds_era5[var] for var in new_ds_era5.data_vars}
+print(era5_datasets)
+#%% download the datasets
+for var, ds in era5_datasets.items():
+    output_path = cfg["data_processed_dir"] + f"/era5_de_{var}.nc"
+    ds.to_netcdf(output_path)
 
-output_path = cfg["data_processed_dir"] + "/era5_de.zarr"
-ds_era5.to_zarr(output_path)
+#%%
+#output_path = cfg["data_processed_dir"] + "/era5_de.nc"
+#new_ds_era5.to_netcdf(output_path)
