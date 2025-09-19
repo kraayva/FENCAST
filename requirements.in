@@ -18,3 +18,5 @@ gcsfs
 dask
 torch
 torchvision
+pyarrow
+fastparquet

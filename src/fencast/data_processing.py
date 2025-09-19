@@ -34,7 +34,7 @@ def load_and_prepare_data():
         pd.DataFrame: A DataFrame containing the weather features as columns.
         pd.DataFrame: A DataFrame containing the CF target values for each NUTS-2 region.
     """
-    print("Starting data preparation using configuration files...")
+    print("Starting data preparation...")
 
     # --- 2. Load and combine the weather data (Input Features) ---
     # Get the list of NetCDF file paths from the data processing config
@@ -64,6 +64,9 @@ def load_and_prepare_data():
         f'{var}_{level}_{lat:.2f}_{lon:.2f}' for var, level, lat, lon in df_weather_flat.columns
     ]
     print(f"DataFrame flattened. Number of features: {len(df_weather_flat.columns)}")
+
+    # --- Make the weather data index timezone-aware ---
+    df_weather_flat.index = df_weather_flat.index.tz_localize('UTC')
 
     # --- 4. Load the target data (Output Labels) ---
     cf_file = Path(cfm['target_data_raw'])
@@ -99,6 +102,7 @@ def load_and_prepare_data():
 if __name__ == '__main__':
     try:
         X_processed, y_processed = load_and_prepare_data()
+        
         print("\n--- Results ---")
         print("Shape of features (X):", X_processed.shape)
         print("Shape of labels (y):", y_processed.shape)
@@ -106,12 +110,33 @@ if __name__ == '__main__':
         print(X_processed.iloc[:, :3].head())
         print("\nFirst 5 rows of labels:")
         print(y_processed.head())
-        X_processed.to_parquet(f'{cfm['data_processed_dir']}/{cfm['setup_name']}_features.parquet')
-        y_processed.to_parquet(f'{cfm['data_processed_dir']}/{cfm['setup_name']}_labels.parquet')
+        
+        # Ask the user if they want to save the data
+        if input("\nSave processed data as Parquet files? (y/n): ").lower() == 'y':
+            
+            # Convert to float32 for ~50% smaller files
+            X_processed = X_processed.astype('float32')
+            y_processed = y_processed.astype('float32')
+            print("Converting data to float32 for efficiency.")
 
+            # Use pathlib for robust path creation
+            processed_dir = Path(cfg['data_processed_dir'])
+            processed_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save as Parquet files
+            features_path = processed_dir / f"{cfm['setup_name']}_features.parquet"
+            labels_path = processed_dir / f"{cfm['setup_name']}_labels.parquet"
+
+            X_processed.to_parquet(features_path)
+            y_processed.to_parquet(labels_path)
+            
+            print(f"Processed data saved to {processed_dir}")
+        else:
+            print("Processed data not saved.")
+            
     except FileNotFoundError as e:
         print(f"\nError: {e}")
-        print("Please ensure your paths in 'configs/global.yaml' and 'configs/datapp_de.yaml' are correct and files are accessible.")
+        print("Please ensure your paths in '*.yaml' are correct.")
     except KeyError as e:
         print(f"\nError: Missing key {e} in a configuration file.")
         print("Please check your YAML files for completeness.")
