@@ -99,7 +99,6 @@ def load_and_prepare_data():
 if __name__ == '__main__':
     try:
         X_processed, y_processed = load_and_prepare_data()
-        
         print("\n--- Results ---")
         print("Shape of features (X):", X_processed.shape)
         print("Shape of labels (y):", y_processed.shape)
@@ -107,9 +106,12 @@ if __name__ == '__main__':
         print(X_processed.iloc[:, :3].head())
         print("\nFirst 5 rows of labels:")
         print(y_processed.head())
+        X_processed.to_parquet(f'{cfm['data_processed_dir']}/{cfm['setup_name']}_features.parquet')
+        y_processed.to_parquet(f'{cfm['data_processed_dir']}/{cfm['setup_name']}_labels.parquet')
+
     except FileNotFoundError as e:
         print(f"\nError: {e}")
-        print("Please ensure your paths in 'configs/global.yaml' and 'configs/datapp_de.yaml' are correct.")
+        print("Please ensure your paths in 'configs/global.yaml' and 'configs/datapp_de.yaml' are correct and files are accessible.")
     except KeyError as e:
         print(f"\nError: Missing key {e} in a configuration file.")
         print("Please check your YAML files for completeness.")
