@@ -1,0 +1,54 @@
+# src/fencast/utils/tools.py
+
+import logging
+from datetime import datetime
+from fencast.utils.paths import LOG_DIR
+
+def setup_logger():
+    """
+    Configures and returns a logger to be used throughout the project.
+    
+    The logger will write to both a file and the console.
+    """
+    # Create a unique log file name for each run using a timestamp
+    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file_name = f"run_{run_timestamp}.log"
+    
+    # Ensure the log directory exists
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file_path = LOG_DIR / log_file_name
+
+    # Get the root logger
+    logger = logging.getLogger("fencast")
+    logger.setLevel(logging.INFO) # Set the minimum level of messages to log
+
+    # Prevent logs from being propagated to the root logger if it has other handlers
+    logger.propagate = False
+    
+    # If handlers are already present, don't add more
+    if logger.hasHandlers():
+        return logger
+
+    # --- Create Handlers ---
+    # 1. File Handler: writes log messages to a file
+    file_handler = logging.FileHandler(log_file_path)
+    
+    # 2. Stream Handler: writes log messages to the console (e.g., your terminal)
+    stream_handler = logging.StreamHandler()
+
+    # --- Create Formatter ---
+    # Defines the format of the log messages
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+
+    # --- Add Handlers to the Logger ---
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    
+    logger.info(f"Logger initialized. Log file at: {log_file_path}")
+
+    return logger

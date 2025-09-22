@@ -11,6 +11,8 @@ CONFIG_DIR = PROJECT_ROOT / "configs"
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
+LOG_DIR = PROJECT_ROOT / "logs"
+RESULTS_DIR = PROJECT_ROOT / "results"
 
 def load_config(config_name: str) -> dict:
     """

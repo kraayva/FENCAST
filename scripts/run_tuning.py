@@ -5,30 +5,43 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import optuna
+from datetime import datetime
+import json
 
 # Import our custom modules
-from fencast.utils.paths import load_config
+from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicFFNN
+from fencast.utils.tools import setup_logger
+
+# Setup logger once at the start of the script
+logger = setup_logger()
 
 def objective(trial: optuna.Trial) -> float:
     
     # 1. SETUP & HYPERPARAMETER SUGGESTIONS
     # =================================================================================
+    logger.info(f"--- Starting Trial {trial.number} ---")
+    
     config = load_config("datapp_de")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-    dropout_rate = trial.suggest_float("dropout", 0.1, 0.5)
-    n_layers = trial.suggest_int("n_layers", 1, 3)
+    # Suggest hyperparameters
+    params = {
+        'lr': trial.suggest_float("lr", 1e-5, 1e-2, log=True),
+        'dropout_rate': trial.suggest_float("dropout", 0.1, 0.5),
+        'n_layers': trial.suggest_int("n_layers", 1, 3),
+        'activation_name': trial.suggest_categorical("activation", ["ReLU", "ELU"])
+    }
     
     hidden_layers = []
-    for i in range(n_layers):
+    for i in range(params['n_layers']):
         n_units = trial.suggest_int(f"n_units_l{i}", 256, 2048)
         hidden_layers.append(n_units)
-
-    activation_name = trial.suggest_categorical("activation", ["ReLU", "ELU"])
-    activation_fn = getattr(nn, activation_name)()
+    params['hidden_layers'] = hidden_layers
+    
+    # Log the chosen hyperparameters for this trial
+    logger.info(f"Trial {trial.number} Parameters: {json.dumps(params, indent=4)}")
 
     INPUT_SIZE = 20295
     OUTPUT_SIZE = 37
@@ -37,23 +50,25 @@ def objective(trial: optuna.Trial) -> float:
 
     # 2. DATA LOADING
     # =================================================================================
+    logger.info(f"Trial {trial.number}: Loading data...")
     train_dataset = FencastDataset(config=config, mode='train')
     validation_dataset = FencastDataset(config=config, mode='validation')
     train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     validation_loader = DataLoader(dataset=validation_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    logger.info(f"Trial {trial.number}: Data loading complete.")
 
     # 3. MODEL, LOSS, and OPTIMIZER
     # =================================================================================
     model = DynamicFFNN(
         input_size=INPUT_SIZE,
         output_size=OUTPUT_SIZE,
-        hidden_layers=hidden_layers,
-        dropout_rate=dropout_rate,
-        activation_fn=activation_fn
+        hidden_layers=params['hidden_layers'],
+        dropout_rate=params['dropout_rate'],
+        activation_fn=getattr(nn, params['activation_name'])()
     ).to(device)
     
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
 
     # 4. TRAINING & VALIDATION LOOP
     # =================================================================================
@@ -61,6 +76,7 @@ def objective(trial: optuna.Trial) -> float:
     
     for epoch in range(EPOCHS):
         model.train()
+        # Training pass (omitted for brevity, no logging inside the tightest loop)
         for features, labels in train_loader:
             features, labels = features.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -84,28 +100,63 @@ def objective(trial: optuna.Trial) -> float:
         if avg_validation_loss < best_validation_loss:
             best_validation_loss = avg_validation_loss
             
-        # 1. Report the intermediate validation loss to Optuna
         trial.report(avg_validation_loss, epoch)
 
-        # 2. Check if the trial should be pruned
         if trial.should_prune():
+            logger.warning(f"--- Trial {trial.number} pruned at epoch {epoch+1} ---")
             raise optuna.exceptions.TrialPruned()
 
+    logger.info(f"--- Trial {trial.number} finished. Best validation loss: {best_validation_loss:.6f} ---")
     return best_validation_loss
 
 
 if __name__ == '__main__':
-    # --- NEW: Add a pruner to the study ---
+    # ... (Setup logic remains the same)
+    current_date = datetime.now().strftime('%Y%m%d')
+    study_name = f"study_{current_date}"
+    config = load_config("datapp_de")
+    setup_name = config.get('setup_name', 'default_setup')
+    results_dir = PROJECT_ROOT / "results" / setup_name / study_name
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Starting new study: '{study_name}'")
+    logger.info(f"Study results will be saved in: {results_dir}")
+
+    db_path = results_dir / f"{study_name}.db"
+    storage_name = f"sqlite:///{db_path}"
+
     pruner = optuna.pruners.MedianPruner()
-    study = optuna.create_study(direction='minimize', pruner=pruner)
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage_name,
+        load_if_exists=True,
+        direction='minimize',
+        pruner=pruner
+    )
     
     study.optimize(objective, n_trials=50)
     
-    print("\n--- Tuning Finished ---")
-    print("Best trial:")
-    trial = study.best_trial
+    # --- 3. Log and Save Results ---
+    logger.info("--- Tuning Finished ---")
+    logger.info(f"Study statistics:")
+    logger.info(f"  Number of finished trials: {len(study.trials)}")
     
-    print(f"  Value (Best Validation Loss): {trial.value:.6f}")
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print(f"    {key}: {value}")
+    trial = study.best_trial
+    logger.info("Best trial:")
+    logger.info(f"  Value (Best Validation Loss): {trial.value:.6f}")
+    
+    # Nicely format the parameters for logging
+    params_str = json.dumps(trial.params, indent=4)
+    logger.info(f"  Params: \n{params_str}")
+
+    # --- 4. Visualize and Save Plots ---
+    logger.info("--- Generating and saving visualizations ---")
+    if len(study.trials) > 0:
+        fig1 = optuna.visualization.plot_optimization_history(study)
+        fig2 = optuna.visualization.plot_param_importances(study)
+        fig3 = optuna.visualization.plot_slice(study)
+        
+        fig1.write_html(results_dir / "optimization_history.html")
+        fig2.write_html(results_dir / "param_importances.html")
+        fig3.write_html(results_dir / "slice_plot.html")
+        logger.info(f"Plots saved to {results_dir}")
