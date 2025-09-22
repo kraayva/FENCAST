@@ -59,6 +59,7 @@ datasets/
 *.tsv
 
 # --- Results / Outputs ---
+/model/
 outputs/
 results/
 figures/

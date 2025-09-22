@@ -20,3 +20,4 @@ torch
 torchvision
 pyarrow
 fastparquet
+optuna

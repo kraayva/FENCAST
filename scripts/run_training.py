@@ -9,8 +9,13 @@ import numpy as np
 from fencast.utils.paths import load_config
 from fencast.dataset import FencastDataset
 from fencast.models import SimpleFFNN
+from fencast.utils.paths import PROJECT_ROOT
 
-def run_training():
+def run_training(LEARNING_RATE: float = 0.0001, 
+                 BATCH_SIZE: int = 64, 
+                 EPOCHS: int = 10, 
+                 INPUT_SIZE: int = 20295, 
+                 OUTPUT_SIZE: int = 38):
     """
     Main function to orchestrate the model training and validation process.
     """
@@ -20,17 +25,7 @@ def run_training():
     
     # Load the configuration for the specific run
     config = load_config("datapp_de")
-    
-    # Hyperparameters
-    LEARNING_RATE = 0.001
-    BATCH_SIZE = 64
-    EPOCHS = 10 # Start with a small number to see if it works
-    
-    # Define input and output sizes from the config or data
-    # This is a bit manual now, but could be automated later
-    INPUT_SIZE = 20295
-    OUTPUT_SIZE = 38
-    
+            
     # Set the device (use GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -71,52 +66,53 @@ def run_training():
     # 4. TRAINING LOOP
     # =================================================================================
     print("\n--- 4. Starting training ---")
-    
+
+    best_validation_loss = float('inf') # Initialize with a very high value
+    model_save_path = PROJECT_ROOT / f"model/{config['setup_name']}_best_model.pth"
+    model_save_path.parent.mkdir(parents=True, exist_ok=True)  # Create model directory if it doesn't exist
+
     for epoch in range(EPOCHS):
         # --- Training Phase ---
-        model.train() # Set the model to training mode
+        model.train()
         train_losses = []
         for batch_idx, (features, labels) in enumerate(train_loader):
-            # Move data to the selected device
-            features = features.to(device)
-            labels = labels.to(device)
-            
-            # Forward pass: get model predictions
+            # ... (training pass logic is the same) ...
+            features, labels = features.to(device), labels.to(device)
             outputs = model(features)
-            
-            # Calculate the loss
             loss = criterion(outputs, labels)
             train_losses.append(loss.item())
-            
-            # Backward pass and optimization
-            optimizer.zero_grad() # Clear gradients from previous step
-            loss.backward() # Compute gradients
-            optimizer.step() # Update model weights
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         avg_train_loss = np.mean(train_losses)
 
         # --- Validation Phase ---
-        model.eval() # Set the model to evaluation mode (disables dropout)
+        model.eval()
         validation_losses = []
-        with torch.no_grad(): # Disable gradient calculation for validation
+        with torch.no_grad():
             for features, labels in validation_loader:
-                features = features.to(device)
-                labels = labels.to(device)
-                
+                # ... (validation pass logic is the same) ...
+                features, labels = features.to(device), labels.to(device)
                 outputs = model(features)
                 loss = criterion(outputs, labels)
                 validation_losses.append(loss.item())
 
         avg_validation_loss = np.mean(validation_losses)
-        
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.6f}, Validation Loss: {avg_validation_loss:.6f}")
+
+        # --- Save the best model checkpoint ---
+        if avg_validation_loss < best_validation_loss:
+            best_validation_loss = avg_validation_loss
+            torch.save(model.state_dict(), model_save_path)
+            print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.6f}, Validation Loss: {avg_validation_loss:.6f} (saved)")
+        else:
+            print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.6f}, Validation Loss: {avg_validation_loss:.6f}")
 
     print("\n--- Training finished ---")
-    
-    # (Optional) Save the trained model
-    # torch.save(model.state_dict(), "fencast_model.pth")
-    # print("Model saved to fencast_model.pth")
+    print(f"Best model validation loss: {best_validation_loss:.6f}")
+    print(f"Saved to: {model_save_path}")
 
 
 if __name__ == '__main__':
-    run_training()
+    run_training(INPUT_SIZE=20295, OUTPUT_SIZE=37)

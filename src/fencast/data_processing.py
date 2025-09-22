@@ -7,6 +7,10 @@ from pathlib import Path
 # --- Import path manager ---
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
 
+# Optional: Specify columns to drop from the CF data
+#drop_cols = None
+drop_cols = ['DE50']  # DE50 is Bremen and has only nans in the CF data
+
 def load_and_prepare_data(config: dict):
     """
     Loads ERA5 and CF data based on a given config, merges them, and prepares them for training.
@@ -43,6 +47,10 @@ def load_and_prepare_data(config: dict):
     df_cf = pd.read_csv(cf_file, index_col='Date', parse_dates=True)
     df_cf.index = df_cf.index.tz_localize('UTC')
     print("\nCapacity factor (CF) data loaded.")
+
+    if drop_cols != None:
+        df_cf = df_cf.drop(columns=drop_cols, errors='ignore')
+        print(f"Dropped columns from CF data: {drop_cols}")
 
     # --- Merge, filter, and split ---
     combined_data = pd.merge(df_weather_flat, df_cf, left_index=True, right_index=True, how='inner')

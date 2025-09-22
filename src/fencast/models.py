@@ -38,21 +38,48 @@ class SimpleFFNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Defines the forward pass of the model.
+        return self.network(x)
+    
+# In src/fencast/models.py, add this new class
 
+class DynamicFFNN(nn.Module):
+    """
+    A feed-forward neural network with a dynamically configurable architecture.
+    """
+    def __init__(self, input_size: int, output_size: int, hidden_layers: list, 
+                 dropout_rate: float, activation_fn: nn.Module = nn.ReLU()):
+        """
         Args:
-            x (torch.Tensor): The input tensor of shape (batch_size, input_size).
-
-        Returns:
-            torch.Tensor: The output tensor of shape (batch_size, output_size).
+            input_size (int): Number of input features.
+            output_size (int): Number of output values.
+            hidden_layers (list): A list of integers, where each integer is the number of neurons in a hidden layer.
+            dropout_rate (float): The dropout probability.
+            activation_fn (nn.Module): The activation function to use (e.g., nn.ReLU() or nn.ELU()).
         """
+        super().__init__()
+        
+        layers = []
+        in_features = input_size
+        
+        # Create hidden layers dynamically
+        for h_features in hidden_layers:
+            layers.append(nn.Linear(in_features, h_features))
+            layers.append(activation_fn)
+            layers.append(nn.Dropout(dropout_rate))
+            in_features = h_features # The output of this layer is the input to the next
+            
+        # Add the final output layer
+        layers.append(nn.Linear(in_features, output_size))
+        layers.append(nn.Sigmoid())
+        
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.network(x)
 
 
 if __name__ == '__main__':
     # This block is for testing the model architecture.
-    # You can run this file directly with `python src/fencast/models.py`
     
     # --- Configuration ---
     # Define the number of features based on our data processing
