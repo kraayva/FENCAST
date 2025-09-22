@@ -4,7 +4,7 @@ import yaml
 from pathlib import Path
 
 # Define the absolute path to the project root directory
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # Define other key directories relative to the project root
 CONFIG_DIR = PROJECT_ROOT / "configs"
