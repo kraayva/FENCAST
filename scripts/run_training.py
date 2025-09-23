@@ -13,7 +13,10 @@ from fencast.utils.paths import PROJECT_ROOT
 
 def run_training(LEARNING_RATE: float = 0.0001, 
                  BATCH_SIZE: int = 64, 
-                 EPOCHS: int = 10, 
+                 EPOCHS: int = 30, 
+                 LAYER_SIZES: list = [1024, 512, 256],
+                 ACTIVATION: str = 'ELU', 
+                 DROPOUT_RATE: float = 0.2,
                  INPUT_SIZE: int = 20295, 
                  OUTPUT_SIZE: int = 38):
     """
@@ -115,4 +118,27 @@ def run_training(LEARNING_RATE: float = 0.0001,
 
 
 if __name__ == '__main__':
-    run_training(INPUT_SIZE=20295, OUTPUT_SIZE=37)
+    # Load best hyperparameters from tuning results
+    config = load_config("datapp_de")
+    setup_name = config.get('setup_name')
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
+    latest_study_dir = sorted(results_parent_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)[0]
+    study_name = latest_study_dir.name
+    storage_name = f"sqlite:///{latest_study_dir / study_name}.db"
+
+    import optuna
+    study = optuna.load_study(study_name=study_name, storage=storage_name)
+    best_params = study.best_trial.params
+
+    print(f"Best hyperparameters from tuning: {best_params}")
+
+    # Run final training with the best hyperparameters
+    run_training(
+        INPUT_SIZE=20295,
+        OUTPUT_SIZE=37,
+        EPOCHS=30,
+        LAYER_SIZES=best_params.get("LAYER_SIZES", [1024, 512, 256]),
+        ACTIVATION=best_params.get("ACTIVATION", "ELU"),
+        DROPOUT_RATE=best_params.get("DROPOUT_RATE", 0.2),
+        LEARNING_RATE=best_params.get("LEARNING_RATE", 0.0001),
+    )

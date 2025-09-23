@@ -4,15 +4,15 @@ import logging
 from datetime import datetime
 from fencast.utils.paths import LOG_DIR
 
-def setup_logger():
+def setup_logger(prefix: str = "default"):
     """
     Configures and returns a logger to be used throughout the project.
     
     The logger will write to both a file and the console.
     """
-    # Create a unique log file name for each run using a timestamp
+    # Create a unique log file name for each script using a timestamp
     run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file_name = f"run_{run_timestamp}.log"
+    log_file_name = f"{run_timestamp}_{prefix}.log"
     
     # Ensure the log directory exists
     LOG_DIR.mkdir(parents=True, exist_ok=True)

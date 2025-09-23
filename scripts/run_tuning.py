@@ -16,7 +16,7 @@ from fencast.utils.tools import setup_logger
 #%%
 
 # Setup logger once at the start of the script
-logger = setup_logger()
+logger = setup_logger("hyperparameter_tuning")
 
 def objective(trial: optuna.Trial) -> float:
     
