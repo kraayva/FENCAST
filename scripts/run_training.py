@@ -4,82 +4,76 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
+import optuna
+import json
 
 # Import our custom modules
-from fencast.utils.paths import load_config
+from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
-from fencast.models import SimpleFFNN
-from fencast.utils.paths import PROJECT_ROOT
+from fencast.models import DynamicFFNN 
+from fencast.utils.tools import setup_logger
 
-def run_training(LEARNING_RATE: float = 0.0001, 
-                 BATCH_SIZE: int = 64, 
-                 EPOCHS: int = 30, 
-                 LAYER_SIZES: list = [1024, 512, 256],
-                 ACTIVATION: str = 'ELU', 
-                 DROPOUT_RATE: float = 0.2,
-                 INPUT_SIZE: int = 20295, 
-                 OUTPUT_SIZE: int = 38):
+logger = setup_logger("training")
+
+def run_training(
+    learning_rate: float,
+    batch_size: int,
+    epochs: int,
+    hidden_layers: list,
+    activation_name: str,
+    dropout_rate: float,
+    input_size: int,
+    output_size: int
+):
     """
     Main function to orchestrate the model training and validation process.
     """
     # 1. SETUP
     # =================================================================================
-    print("--- 1. Setting up experiment ---")
-    
-    # Load the configuration for the specific run
+    logger.info("--- 1. Setting up experiment ---")
     config = load_config("datapp_de")
-            
-    # Set the device (use GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # 2. DATA LOADING
     # =================================================================================
-    print("\n--- 2. Loading data ---")
-    
-    # Create Dataset instances for training and validation
-    # The scaler is fit on the training set and applied to the validation set
+    logger.info("--- 2. Loading data ---")
     train_dataset = FencastDataset(config=config, mode='train')
     validation_dataset = FencastDataset(config=config, mode='validation')
-    
-    # Create DataLoader instances
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True # Shuffle training data each epoch
-    )
-    validation_loader = DataLoader(
-        dataset=validation_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False # No need to shuffle validation data
-    )
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=False)
 
     # 3. MODEL, LOSS, and OPTIMIZER
     # =================================================================================
-    print("\n--- 3. Initializing model, loss, and optimizer ---")
+    logger.info("--- 3. Initializing model, loss, and optimizer ---")
 
-    model = SimpleFFNN(input_size=INPUT_SIZE, output_size=OUTPUT_SIZE).to(device)
+    # Create a dictionary of model arguments for saving
+    model_args = {
+        'input_size': input_size,
+        'output_size': output_size,
+        'hidden_layers': hidden_layers,
+        'dropout_rate': dropout_rate,
+        'activation_fn': getattr(nn, activation_name)()
+    }
     
-    # Loss Function: Mean Squared Error for regression
+    # Use the DynamicFFNN with the specified arguments
+    model = DynamicFFNN(**model_args).to(device)
+    
     criterion = nn.MSELoss()
-    
-    # Optimizer: Adam
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # 4. TRAINING LOOP
     # =================================================================================
-    print("\n--- 4. Starting training ---")
+    logger.info("--- 4. Starting training ---")
 
-    best_validation_loss = float('inf') # Initialize with a very high value
-    model_save_path = PROJECT_ROOT / f"model/{config['setup_name']}_best_model.pth"
-    model_save_path.parent.mkdir(parents=True, exist_ok=True)  # Create model directory if it doesn't exist
+    best_validation_loss = float('inf')
+    model_save_path = PROJECT_ROOT / "model" / f"{config['setup_name']}_best_model.pth"
+    model_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    for epoch in range(EPOCHS):
-        # --- Training Phase ---
+    for epoch in range(epochs):
         model.train()
         train_losses = []
-        for batch_idx, (features, labels) in enumerate(train_loader):
-            # ... (training pass logic is the same) ...
+        for features, labels in train_loader:
             features, labels = features.to(device), labels.to(device)
             outputs = model(features)
             loss = criterion(outputs, labels)
@@ -88,57 +82,71 @@ def run_training(LEARNING_RATE: float = 0.0001,
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-
         avg_train_loss = np.mean(train_losses)
 
-        # --- Validation Phase ---
         model.eval()
         validation_losses = []
         with torch.no_grad():
             for features, labels in validation_loader:
-                # ... (validation pass logic is the same) ...
                 features, labels = features.to(device), labels.to(device)
                 outputs = model(features)
                 loss = criterion(outputs, labels)
                 validation_losses.append(loss.item())
-
         avg_validation_loss = np.mean(validation_losses)
 
         # --- Save the best model checkpoint ---
         if avg_validation_loss < best_validation_loss:
             best_validation_loss = avg_validation_loss
-            torch.save(model.state_dict(), model_save_path)
-            print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.6f}, Validation Loss: {avg_validation_loss:.6f} (saved)")
+            
+            # Save the complete checkpoint dictionary
+            torch.save({
+                'model_args': model_args,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, model_save_path)
+            
+            logger.info(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_validation_loss:.6f} (saved)")
         else:
-            print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.6f}, Validation Loss: {avg_validation_loss:.6f}")
+            logger.info(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_validation_loss:.6f}")
 
-    print("\n--- Training finished ---")
-    print(f"Best model validation loss: {best_validation_loss:.6f}")
-    print(f"Saved to: {model_save_path}")
+    logger.info("\n--- Training finished ---")
+    logger.info(f"Best model validation loss: {best_validation_loss:.6f}")
+    logger.info(f"Model saved to: {model_save_path}")
 
 
 if __name__ == '__main__':
-    # Load best hyperparameters from tuning results
+    # Load best hyperparameters from the latest tuning results
+    logger.info("--- Loading best hyperparameters from the latest study ---")
     config = load_config("datapp_de")
     setup_name = config.get('setup_name')
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     latest_study_dir = sorted(results_parent_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)[0]
     study_name = latest_study_dir.name
     storage_name = f"sqlite:///{latest_study_dir / study_name}.db"
-
-    import optuna
+    
     study = optuna.load_study(study_name=study_name, storage=storage_name)
     best_params = study.best_trial.params
 
-    print(f"Best hyperparameters from tuning: {best_params}")
+    # Reconstruct the hidden_layers list from the format Optuna saved
+    best_hidden_layers = [best_params[f"n_units_l{i}"] for i in range(best_params["n_layers"])]
+
+    # Nicely log the parameters we're about to use
+    final_params = {
+        "learning_rate": best_params["lr"],
+        "hidden_layers": best_hidden_layers,
+        "activation_name": best_params["activation"],
+        "dropout_rate": best_params["dropout"]
+    }
+    logger.info(f"Best hyperparameters found:\n{json.dumps(final_params, indent=4)}")
 
     # Run final training with the best hyperparameters
     run_training(
-        INPUT_SIZE=20295,
-        OUTPUT_SIZE=37,
-        EPOCHS=30,
-        LAYER_SIZES=best_params.get("LAYER_SIZES", [1024, 512, 256]),
-        ACTIVATION=best_params.get("ACTIVATION", "ELU"),
-        DROPOUT_RATE=best_params.get("DROPOUT_RATE", 0.2),
-        LEARNING_RATE=best_params.get("LEARNING_RATE", 0.0001),
+        input_size=20295,
+        output_size=37,
+        epochs=30, # A fixed number of epochs for the final run
+        learning_rate=final_params["learning_rate"],
+        hidden_layers=final_params["hidden_layers"],
+        activation_name=final_params["activation_name"],
+        dropout_rate=final_params["dropout_rate"],
+        batch_size=64 # Usually fixed during final training
     )
