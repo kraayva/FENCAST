@@ -1,5 +1,5 @@
 # scripts/run_tuning.py
-
+#%%
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -13,6 +13,7 @@ from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicFFNN
 from fencast.utils.tools import setup_logger
+#%%
 
 # Setup logger once at the start of the script
 logger = setup_logger()
@@ -151,12 +152,37 @@ if __name__ == '__main__':
 
     # --- 4. Visualize and Save Plots ---
     logger.info("--- Generating and saving visualizations ---")
+
+    #%%
+    config = load_config("datapp_de")
+    setup_name = config.get('setup_name', 'default_setup')
+    study_name = "study_20250922"
+    results_dir = PROJECT_ROOT / "results" / "de_uvtzq_scf_NUTS2" / study_name
+    db_path = results_dir / f"{study_name}.db"
+    storage_name = f"sqlite:///{db_path}"
+
+    # Load the study from the database if needed
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage_name,
+        load_if_exists=True,
+        direction='minimize'
+    )
     if len(study.trials) > 0:
         fig1 = optuna.visualization.plot_optimization_history(study)
         fig2 = optuna.visualization.plot_param_importances(study)
         fig3 = optuna.visualization.plot_slice(study)
+        fig4 = optuna.visualization.plot_contour(study)
+        fig5 = optuna.visualization.plot_parallel_coordinate(study)
+        fig6 = optuna.visualization.plot_edf(study)
+        fig7 = optuna.visualization.plot_intermediate_values(study)
         
         fig1.write_html(results_dir / "optimization_history.html")
         fig2.write_html(results_dir / "param_importances.html")
         fig3.write_html(results_dir / "slice_plot.html")
+        fig4.write_html(results_dir / "contour_plot.html")
+        fig5.write_html(results_dir / "parallel_coordinate.html")
+        fig6.write_html(results_dir / "edf_plot.html")
+        fig7.write_html(results_dir / "intermediate_values.html")
         logger.info(f"Plots saved to {results_dir}")
+# %%
