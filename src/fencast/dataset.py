@@ -16,11 +16,12 @@ class FencastDataset(Dataset):
     This class loads the processed data, splits it into train/validation/test sets
     based on years defined in the config, and handles normalization of the features.
     """
-    def __init__(self, config: dict, mode: str):
+    def __init__(self, config: dict, mode: str, apply_normalization: bool = True):
         """
         Args:
             config (dict): The configuration dictionary (e.g., from datapp_de.yaml).
             mode (str): One of 'train', 'validation', or 'test'.
+            apply_normalization (bool): If True, applies StandardScaler to features.
         """
         super().__init__()
         if mode not in ['train', 'validation', 'test']:
@@ -35,8 +36,8 @@ class FencastDataset(Dataset):
         # Split data according to the mode and config years
         self._split_data()
 
-        # Setup and apply normalization
-        self._normalize_features()
+        if apply_normalization:
+            self._normalize_features()
 
     def _load_data(self):
         """Loads features and labels from Parquet files."""
@@ -115,3 +116,7 @@ class FencastDataset(Dataset):
         label_tensor = torch.tensor(labels, dtype=torch.float32)
         
         return feature_tensor, label_tensor
+    
+    def get_data(self):
+        """Returns the processed but un-normalized X and y DataFrames."""
+        return self.X, self.y
