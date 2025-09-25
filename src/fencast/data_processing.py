@@ -8,9 +8,7 @@ from pathlib import Path
 # --- Import path manager ---
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
 
-# Optional: Specify columns to drop from the CF data
-# drop_cols = None
-drop_cols = ['DE50']  # DE50 is Bremen and has only nans in the CF data
+# Columns to drop will be read from config
 
 def load_and_prepare_data(config: dict):
     """
@@ -49,7 +47,9 @@ def load_and_prepare_data(config: dict):
     df_cf.index = df_cf.index.tz_localize('UTC')
     print("\nCapacity factor (CF) data loaded.")
 
-    if drop_cols != None:
+    # Drop columns as specified in config
+    drop_cols = config.get('data_processing', {}).get('drop_columns', [])
+    if drop_cols:
         df_cf = df_cf.drop(columns=drop_cols, errors='ignore')
         print(f"Dropped columns from CF data: {drop_cols}")
 
@@ -64,7 +64,8 @@ def load_and_prepare_data(config: dict):
     
     # Day of year (1-365/366) normalized to [0, 1] then converted to radians
     day_of_year = combined_data.index.dayofyear
-    day_of_year_normalized = (day_of_year - 1) / 365.0  # Normalize to [0, 1] 
+    normalize_denominator = config.get('data_processing', {}).get('day_of_year_normalize_denominator', 365.0)
+    day_of_year_normalized = (day_of_year - 1) / normalize_denominator  # Normalize to [0, 1] 
     day_of_year_rad = day_of_year_normalized * 2 * np.pi  # Convert to radians [0, 2π]
     
     # Create sin and cos features
@@ -93,8 +94,9 @@ if __name__ == '__main__':
         
         # 3. (Optional) Save the results
         if input("\nSave processed data as Parquet files? (y/n): ").lower() == 'y':
-            X_processed = X_processed.astype('float32')
-            y_processed = y_processed.astype('float32')
+            data_type = run_config.get('data_processing', {}).get('data_type', 'float32')
+            X_processed = X_processed.astype(data_type)
+            y_processed = y_processed.astype(data_type)
             
             PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
             

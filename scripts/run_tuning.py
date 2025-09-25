@@ -27,17 +27,33 @@ def objective(trial: optuna.Trial) -> float:
     config = load_config("datapp_de")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Suggest hyperparameters
+    # Get tuning configuration
+    tuning_config = config.get('tuning', {})
+    lr_config = tuning_config.get('learning_rate', {})
+    dropout_config = tuning_config.get('dropout', {})
+    layers_config = tuning_config.get('hidden_layers', {})
+    
+    # Suggest hyperparameters from config
     params = {
-        'lr': trial.suggest_float("lr", 1e-5, 1e-2, log=True),
-        'dropout_rate': trial.suggest_float("dropout", 0.1, 0.5),
-        'n_layers': trial.suggest_int("n_layers", 1, 3),
-        'activation_name': trial.suggest_categorical("activation", ["ReLU", "ELU"])
+        'lr': trial.suggest_float("lr", 
+                                lr_config.get('min', 1e-5), 
+                                lr_config.get('max', 1e-2), 
+                                log=lr_config.get('log_scale', True)),
+        'dropout_rate': trial.suggest_float("dropout", 
+                                          dropout_config.get('min', 0.1), 
+                                          dropout_config.get('max', 0.5)),
+        'n_layers': trial.suggest_int("n_layers", 
+                                    layers_config.get('min_layers', 1), 
+                                    layers_config.get('max_layers', 3)),
+        'activation_name': trial.suggest_categorical("activation", 
+                                                   tuning_config.get('activations', ["ReLU", "ELU"]))
     }
     
     hidden_layers = []
     for i in range(params['n_layers']):
-        n_units = trial.suggest_int(f"n_units_l{i}", 256, 2048)
+        n_units = trial.suggest_int(f"n_units_l{i}", 
+                                  layers_config.get('min_units', 256), 
+                                  layers_config.get('max_units', 2048))
         hidden_layers.append(n_units)
     params['hidden_layers'] = hidden_layers
     
@@ -46,8 +62,8 @@ def objective(trial: optuna.Trial) -> float:
 
     INPUT_SIZE = config['input_size_flat'] 
     OUTPUT_SIZE = config['target_size']  
-    BATCH_SIZE = 64
-    EPOCHS = 30
+    BATCH_SIZE = config.get('model', {}).get('batch_sizes', {}).get('tuning', 64)
+    EPOCHS = tuning_config.get('epochs', 20)
 
     # 2. DATA LOADING
     # =================================================================================
@@ -135,7 +151,8 @@ if __name__ == '__main__':
         pruner=pruner
     )
     
-    study.optimize(objective, n_trials=50)
+    n_trials = config.get('tuning', {}).get('trials', 50)
+    study.optimize(objective, n_trials=n_trials)
     
     # --- 3. Log and Save Results ---
     logger.info("--- Tuning Finished ---")

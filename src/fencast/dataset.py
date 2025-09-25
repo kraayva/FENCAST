@@ -81,8 +81,13 @@ class FencastDataset(Dataset):
 
     def _normalize_features(self):
         """Fits a scaler on the training data and transforms all sets, or loads an existing scaler."""
-        # Identify temporal features that should not be normalized (already bounded [-1, 1])
-        keep_values_columns = [col for col in self.X.columns if 'day_of_year' in col]
+        # Get normalization exclusion patterns from config
+        exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', ['day_of_year'])
+        
+        # Identify features that should not be normalized
+        keep_values_columns = []
+        for pattern in exclude_patterns:
+            keep_values_columns.extend([col for col in self.X.columns if pattern in col])
         normalize_columns = [col for col in self.X.columns if col not in keep_values_columns]
         
         if self.mode == 'train':

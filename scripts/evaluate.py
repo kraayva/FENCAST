@@ -120,7 +120,8 @@ def evaluate(config_name: str = "datapp_de", study_name: str = 'latest'):
     # 2. LOAD DATA (TEST SET)
     logger.info("Loading test set data...")
     test_dataset = FencastDataset(config=config, mode='test')
-    test_loader = DataLoader(dataset=test_dataset, batch_size=256, shuffle=False)
+    batch_size = config.get('model', {}).get('batch_sizes', {}).get('evaluation', 256)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
     
     # 3. LOAD BEST MODEL
     logger.info("Loading best trained model...")

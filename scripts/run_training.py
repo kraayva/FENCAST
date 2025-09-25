@@ -80,7 +80,8 @@ def run_training(
             train_losses.append(loss.item())
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            max_norm = config.get('training', {}).get('gradient_clip_max_norm', 1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
             optimizer.step()
         avg_train_loss = np.mean(train_losses)
 
@@ -143,10 +144,10 @@ if __name__ == '__main__':
     run_training(
         input_size=config['input_size_flat'],  # number of features
         output_size=config['target_size'],  # number of targets
-        epochs=30, # A fixed number of epochs for the final run
+        epochs=config.get('training', {}).get('final_epochs', 30), # Number of epochs from config
         learning_rate=final_params["learning_rate"],
         hidden_layers=final_params["hidden_layers"],
         activation_name=final_params["activation_name"],
         dropout_rate=final_params["dropout_rate"],
-        batch_size=64 # Usually fixed during final training
+        batch_size=config.get('model', {}).get('batch_sizes', {}).get('training', 64)
     )

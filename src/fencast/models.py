@@ -23,14 +23,14 @@ class SimpleFFNN(nn.Module):
         
         self.network = nn.Sequential(
             # 1st Hidden Layer Block
-            nn.Linear(input_size, 1024),
+            nn.Linear(input_size, 1024),  # Could be configurable
             nn.ReLU(),
-            nn.Dropout(p=0.3),
+            nn.Dropout(p=0.3),  # Could be configurable
 
             # 2nd Hidden Layer Block
-            nn.Linear(1024, 512),
+            nn.Linear(1024, 512),  # Could be configurable
             nn.ReLU(),
-            nn.Dropout(p=0.3),
+            nn.Dropout(p=0.3),  # Could be configurable
 
             # Output Layer Block
             nn.Linear(512, output_size),
@@ -80,14 +80,11 @@ class DynamicFFNN(nn.Module):
 
 if __name__ == '__main__':
     # This block is for testing the model architecture.
-    
-    # --- Configuration ---
-    # Define the number of features based on our data processing
-    # 20295 weather features + 2 temporal features (day_of_year_sin, day_of_year_cos)
+    # --- Test Configuration (hardcoded for model testing only) ---
     INPUT_FEATURES = 20297 
     # Define the number of NUTS-2 regions to predict
     OUTPUT_FEATURES = 38
-    # Define a sample batch size
+    # Define a sample batch size for testing
     BATCH_SIZE = 64
 
     # --- Model Initialization ---
