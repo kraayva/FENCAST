@@ -82,32 +82,5 @@ def load_and_prepare_data(config: dict):
     return X, y
 
 
-if __name__ == '__main__':
-    # A dedicated runner script would do this.
-    try:
-        # 1. Choose and load the specific configuration for this run
-        print("Loading configuration for 'datapp_de'...")
-        run_config = load_config("datapp_de")
-
-        # 2. Pass the configuration into the processing function
-        X_processed, y_processed = load_and_prepare_data(config=run_config)
-        
-        # 3. (Optional) Save the results
-        if input("\nSave processed data as Parquet files? (y/n): ").lower() == 'y':
-            data_type = run_config.get('data_processing', {}).get('data_type', 'float32')
-            X_processed = X_processed.astype(data_type)
-            y_processed = y_processed.astype(data_type)
-            
-            PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            
-            setup_name = run_config.get('setup_name', 'default_setup')
-            features_path = PROCESSED_DATA_DIR / f"{setup_name}_features.parquet"
-            labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels.parquet"
-
-            X_processed.to_parquet(features_path)
-            y_processed.to_parquet(labels_path)
-            
-            print(f"Processed data saved to {PROCESSED_DATA_DIR}")
-            
-    except Exception as e:
-        print(f"\nAn error occurred: {e}")
+# This module contains data processing functions.
+# To run data processing, use: python scripts/run_data_processing.py
