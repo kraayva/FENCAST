@@ -141,8 +141,8 @@ if __name__ == '__main__':
 
     # Run final training with the best hyperparameters
     run_training(
-        input_size=20295,
-        output_size=37,
+        input_size=config['input_size_flat'],  # number of features
+        output_size=config['target_size'],  # number of targets
         epochs=30, # A fixed number of epochs for the final run
         learning_rate=final_params["learning_rate"],
         hidden_layers=final_params["hidden_layers"],

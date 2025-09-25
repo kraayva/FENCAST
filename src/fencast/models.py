@@ -16,7 +16,7 @@ class SimpleFFNN(nn.Module):
         Initializes the layers of the network.
 
         Args:
-            input_size (int): The number of input features (e.g., 20295).
+            input_size (int): The number of input features (e.g., 20297 = 20295 weather + 2 temporal).
             output_size (int): The number of output values (e.g., 38 NUTS-2 regions).
         """
         super().__init__()
@@ -83,7 +83,8 @@ if __name__ == '__main__':
     
     # --- Configuration ---
     # Define the number of features based on our data processing
-    INPUT_FEATURES = 20295 
+    # 20295 weather features + 2 temporal features (day_of_year_sin, day_of_year_cos)
+    INPUT_FEATURES = 20297 
     # Define the number of NUTS-2 regions to predict
     OUTPUT_FEATURES = 38
     # Define a sample batch size

@@ -2,13 +2,14 @@
 
 import pandas as pd
 import xarray as xr
+import numpy as np
 from pathlib import Path
 
 # --- Import path manager ---
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
 
 # Optional: Specify columns to drop from the CF data
-#drop_cols = None
+# drop_cols = None
 drop_cols = ['DE50']  # DE50 is Bremen and has only nans in the CF data
 
 def load_and_prepare_data(config: dict):
@@ -58,10 +59,25 @@ def load_and_prepare_data(config: dict):
     end_date = config['time_end']
     combined_data = combined_data.loc[start_date:end_date]
     
-    X = combined_data[df_weather_flat.columns]
+    # --- Add cyclical temporal features ---
+    print("Adding cyclical temporal features...")
+    
+    # Day of year (1-365/366) normalized to [0, 1] then converted to radians
+    day_of_year = combined_data.index.dayofyear
+    day_of_year_normalized = (day_of_year - 1) / 365.0  # Normalize to [0, 1] 
+    day_of_year_rad = day_of_year_normalized * 2 * np.pi  # Convert to radians [0, 2π]
+    
+    # Create sin and cos features
+    temporal_features = pd.DataFrame({
+        'day_of_year_sin': np.sin(day_of_year_rad),
+        'day_of_year_cos': np.cos(day_of_year_rad)
+    }, index=combined_data.index)
+    
+    # Combine weather features with temporal features
+    X = pd.concat([combined_data[df_weather_flat.columns], temporal_features], axis=1)
     y = combined_data[df_cf.columns]
 
-    print(f"Split complete. {X.shape[1]} features and {y.shape[1]} labels.")
+    print(f"Split complete. {X.shape[1]} features ({len(df_weather_flat.columns)} weather + {len(temporal_features.columns)} temporal) and {y.shape[1]} labels.")
     return X, y
 
 

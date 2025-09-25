@@ -81,17 +81,43 @@ class FencastDataset(Dataset):
 
     def _normalize_features(self):
         """Fits a scaler on the training data and transforms all sets, or loads an existing scaler."""
+        # Identify temporal features that should not be normalized (already bounded [-1, 1])
+        keep_values_columns = [col for col in self.X.columns if 'day_of_year' in col]
+        normalize_columns = [col for col in self.X.columns if col not in keep_values_columns]
+        
         if self.mode == 'train':
-            print(f"[{self.mode}] Fitting new scaler and saving to {self.scaler_path}...")
+            print(f"[{self.mode}] Fitting new scaler on {len(normalize_columns)} features...")
+            print(f"[{self.mode}] Excluding {len(keep_values_columns)} features from normalization: {keep_values_columns}")
+            
             self.scaler = StandardScaler()
-            self.X = self.scaler.fit_transform(self.X)
+            # fit and transform columns
+            weather_data_scaled = self.scaler.fit_transform(self.X[normalize_columns])
+            
+            # Combine scaled data with unscaled data
+            self.X = pd.concat([
+                pd.DataFrame(weather_data_scaled, columns=normalize_columns, index=self.X.index),
+                self.X[keep_values_columns]
+            ], axis=1)
+            
             joblib.dump(self.scaler, self.scaler_path)
         else: # Validation or test mode
             if not self.scaler_path.exists():
                 raise FileNotFoundError(f"Scaler file not found at {self.scaler_path}. Please run training first.")
             print(f"[{self.mode}] Loading existing scaler from {self.scaler_path}...")
+            print(f"[{self.mode}] Excluding {len(keep_values_columns)} features from normalization: {keep_values_columns}")
+            
             self.scaler = joblib.load(self.scaler_path)
-            self.X = self.scaler.transform(self.X)
+            # Only transform weather columns
+            weather_data_scaled = self.scaler.transform(self.X[normalize_columns])
+            
+            # Combine scaled weather data with unscaled temporal data
+            self.X = pd.concat([
+                pd.DataFrame(weather_data_scaled, columns=normalize_columns, index=self.X.index),
+                self.X[keep_values_columns]
+            ], axis=1)
+            
+        # Reorder columns to maintain consistent feature order
+        self.X = self.X[normalize_columns + keep_values_columns]
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
@@ -108,7 +134,10 @@ class FencastDataset(Dataset):
             tuple: (feature_tensor, label_tensor)
         """
         # Get the numpy arrays for the given index
-        features = self.X[idx]
+        if isinstance(self.X, pd.DataFrame):
+            features = self.X.iloc[idx].values
+        else:
+            features = self.X[idx]
         labels = self.y.iloc[idx].values
 
         # Convert numpy arrays to PyTorch tensors

@@ -44,10 +44,10 @@ def objective(trial: optuna.Trial) -> float:
     # Log the chosen hyperparameters for this trial
     logger.info(f"Trial {trial.number} Parameters: {json.dumps(params, indent=4)}")
 
-    INPUT_SIZE = 20295
-    OUTPUT_SIZE = 37
+    INPUT_SIZE = config['input_size_flat'] 
+    OUTPUT_SIZE = config['target_size']  
     BATCH_SIZE = 64
-    EPOCHS = 20
+    EPOCHS = 30
 
     # 2. DATA LOADING
     # =================================================================================
