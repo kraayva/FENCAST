@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import optuna
+import argparse
 import json
 
 # Import our custom modules
@@ -116,29 +117,67 @@ def run_training(
 
 
 if __name__ == '__main__':
-    # Load best hyperparameters from the latest tuning results
-    logger.info("--- Loading best hyperparameters from the latest study ---")
-    config = load_config("datapp_de")
-    setup_name = config.get('setup_name')
-    results_parent_dir = PROJECT_ROOT / "results" / setup_name
-    latest_study_dir = sorted(results_parent_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)[0]
-    study_name = latest_study_dir.name
-    storage_name = f"sqlite:///{latest_study_dir / study_name}.db"
+    parser = argparse.ArgumentParser(description='Run training with given or best hyperparameters from tuning')
+    parser.add_argument('--config', '-c', 
+                        default='datapp_de',
+                        help='Configuration file name (default: datapp_de)')
+    parser.add_argument('--study_name', '-s',
+                        default='latest',
+                        help='Specify the study name (default: latest)')
+    parser.add_argument('--params', '-p',
+                        default='best',
+                        help='Hyperparameters source: "best" for best from study, or JSON string with params')
     
-    study = optuna.load_study(study_name=study_name, storage=storage_name)
-    best_params = study.best_trial.params
+    args = parser.parse_args()
+    config = load_config(args.config)
+    setup_name = config.get('setup_name', 'default_setup')
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
 
-    # Reconstruct the hidden_layers list from the format Optuna saved
-    best_hidden_layers = [best_params[f"n_units_l{i}"] for i in range(best_params["n_layers"])]
+    if args.params == 'best':
+        logger.info("--- Loading best hyperparameters from study ---")
+        
+        # Determine study directory
+        if args.study_name == 'latest':
+            study_dir = sorted(results_parent_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)[0]
+        else:
+            study_dir = results_parent_dir / args.study_name
+
+        # Load study and get best parameters
+        study_name = study_dir.name  # Use actual directory name
+        storage_name = f"sqlite:///{study_dir / study_name}.db"
+        
+        try:
+            study = optuna.load_study(study_name=study_name, storage=storage_name)
+            params = study.best_trial.params
+            logger.info(f"Loaded best parameters from study: {study_name}")
+        except Exception as e:
+            logger.error(f"Failed to load study: {e}")
+            raise
+    else:
+        logger.info("--- Using provided JSON hyperparameters ---")
+        try:
+            params = json.loads(args.params)
+            logger.info(f"Loaded parameters from JSON")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON format: {e}")
+            raise
+
+    # Reconstruct the hidden_layers list based on parameter format
+    if "hidden_layers" in params:
+        # Direct format (from JSON)
+        selected_hidden_layers = params["hidden_layers"]
+    else:
+        # Optuna format (reconstructed from n_layers and n_units_l*)
+        selected_hidden_layers = [params[f"n_units_l{i}"] for i in range(params["n_layers"])]
 
     # Nicely log the parameters we're about to use
     final_params = {
-        "learning_rate": best_params["lr"],
-        "hidden_layers": best_hidden_layers,
-        "activation_name": best_params["activation"],
-        "dropout_rate": best_params["dropout"]
+        "learning_rate": params.get("lr", params.get("learning_rate")),  # Support both formats
+        "hidden_layers": selected_hidden_layers,
+        "activation_name": params.get("activation", params.get("activation_name", "ReLU")),
+        "dropout_rate": params.get("dropout", params.get("dropout_rate"))
     }
-    logger.info(f"Best hyperparameters found:\n{json.dumps(final_params, indent=4)}")
+    logger.info(f"Selected hyperparameters:\n{json.dumps(final_params, indent=4)}")
 
     # Run final training with the best hyperparameters
     run_training(
