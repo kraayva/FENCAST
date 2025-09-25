@@ -1,7 +1,7 @@
 # FENCAST
 Fine-Tuning MLWP Models for Improved Forecasts in the Energy Sector
 
-FENCAST is a Python project for [add short description here, e.g. "Forecasting Energy Capacities"]. This document explains how to set up the project, manage dependencies, and work with the virtual environment.
+FENCAST is a Projet to investigate the capability of MLWP models to forecast weather values applicable to predict power generation values. This document explains how to set up the project, train and evaluate a ML algorithm to predict power generation values and use this algorithm to compare the output of several MLWPs.
 
 Setup: First, clone the repository and create a virtual environment inside the project folder. After that, activate the environment and install the dependencies from the requirements.txt file.
 
