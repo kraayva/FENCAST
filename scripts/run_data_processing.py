@@ -63,7 +63,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool):
                 y_processed.to_parquet(labels_path)
                 logger.info(f"  Features Shape: {X_processed.shape}")
 
-            logger.info(f"✅ Data processing complete!")
+            logger.info(f"Data processing complete!")
             logger.info(f"   Features: {features_path}")
             logger.info(f"   Labels:   {labels_path}")
         else:

@@ -40,7 +40,6 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
     # --- 2. Load the target data (Output Labels) ---
     cf_file = Path(config['target_data_raw'])
     df_cf = pd.read_csv(cf_file, index_col='Date', parse_dates=True)
-    df_cf.index = df_cf.index.tz_localize('UTC')
     print("Capacity factor (CF) data loaded.")
 
     # Drop columns from target data as specified in config
@@ -50,10 +49,47 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         print(f"Dropped columns from CF data: {drop_cols}")
 
     # --- 3. Align data by finding common timestamps ---
-    print("Aligning weather and CF data on common timestamps...")
+    # Ensure both datasets have consistent timezone handling
     weather_index = weather_data.time.to_index()
     cf_index = df_cf.index
+    
+    # Make both timezone-naive for comparison
+    if weather_index.tz is not None:
+        weather_index = weather_index.tz_localize(None)
+    if cf_index.tz is not None:
+        cf_index = cf_index.tz_localize(None)
+        
+    # Find common timestamps
     common_index = weather_index.intersection(cf_index)
+    if len(common_index) == 0:
+        print("WARNING: No exact timestamp matches found!")
+        print("Attempting to find the closest matching timestamps...")
+        
+        # Try to resample or find nearest matches
+        # This handles cases where weather data is hourly and CF data is daily
+        
+        # First, let's try to see if we can align by date only (ignoring time)
+        weather_dates = weather_index.normalize()  # Remove time component
+        cf_dates = cf_index.normalize()
+        
+        common_dates = weather_dates.intersection(cf_dates)
+        
+        if len(common_dates) > 0:
+            # Use the weather data timestamps that fall on matching dates
+            matching_weather_times = weather_index[weather_index.normalize().isin(common_dates)]
+            matching_cf_times = cf_index[cf_index.normalize().isin(common_dates)]
+
+            common_index = matching_weather_times.intersection(matching_cf_times)
+            
+            if len(common_index) == 0:
+                # If still no match, try a different approach - use weather data and interpolate CF data
+                print("Still no matches - will use weather timestamps and interpolate CF data")
+                common_index = matching_weather_times
+                # Reindex CF data to match weather timestamps (with interpolation)
+                df_cf = df_cf.reindex(common_index, method='nearest', tolerance=pd.Timedelta('12 hours'))
+            
+        else:
+            raise ValueError("No overlapping dates between weather and CF data")
     
     # Filter both datasets to the common, aligned timestamps
     weather_data = weather_data.sel(time=common_index)
