@@ -90,12 +90,18 @@ def run_training(config: dict, model_type: str, params: dict):
     for epoch in range(epochs):
         model.train()
         train_losses = []
-        for features, labels in train_loader:
-            features, labels = features.to(device), labels.to(device)
-            outputs = model(features)
+        for batch in train_loader:
+            if model_type == 'cnn':
+                spatial_features, temporal_features, labels = batch
+                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+                outputs = model(spatial_features, temporal_features)
+            else: # FFNN
+                features, labels = batch
+                features, labels = features.to(device), labels.to(device)
+                outputs = model(features)
+            
             loss = criterion(outputs, labels)
             train_losses.append(loss.item())
-            
             optimizer.zero_grad()
             loss.backward()
             max_norm = config.get('training', {}).get('gradient_clip_max_norm', 1.0)

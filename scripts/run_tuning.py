@@ -125,11 +125,22 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     for epoch in range(epochs):
         model.train()
-        for features, labels in train_loader:
-            features, labels = features.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(features)
+        train_losses = []
+        # --- CHANGE IS HERE ---
+        for batch in train_loader:
+            if model_type == 'cnn':
+                spatial_features, temporal_features, labels = batch
+                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+                outputs = model(spatial_features, temporal_features)
+            else: # FFNN
+                features, labels = batch
+                features, labels = features.to(device), labels.to(device)
+                outputs = model(features)
+            
             loss = criterion(outputs, labels)
+            # --- END OF CHANGE ---
+            train_losses.append(loss.item())
+            optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
