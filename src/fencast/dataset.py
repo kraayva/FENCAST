@@ -6,6 +6,7 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 import joblib
 from pathlib import Path
+import numpy as np
 
 from fencast.utils.paths import PROCESSED_DATA_DIR
 
@@ -13,24 +14,29 @@ class FencastDataset(Dataset):
     """
     PyTorch Dataset for the FENCAST project.
 
-    This class loads the processed data, splits it into train/validation/test sets
-    based on years defined in the config, and handles normalization of the features.
+    This class loads processed data, splits it into train/validation/test sets,
+    and handles normalization appropriate for the specified model type (FFNN or CNN).
     """
-    def __init__(self, config: dict, mode: str, apply_normalization: bool = True):
+    def __init__(self, config: dict, mode: str, model_type: str, apply_normalization: bool = True):
         """
         Args:
-            config (dict): The configuration dictionary (e.g., from datapp_de.yaml).
+            config (dict): The project's configuration dictionary.
             mode (str): One of 'train', 'validation', or 'test'.
-            apply_normalization (bool): If True, applies StandardScaler to features.
+            model_type (str): The target model architecture, 'ffnn' or 'cnn'.
+            apply_normalization (bool): If True, applies normalization to features.
         """
         super().__init__()
         if mode not in ['train', 'validation', 'test']:
             raise ValueError("Mode must be 'train', 'validation', or 'test'")
+        if model_type not in ['ffnn', 'cnn']:
+            raise ValueError("model_type must be 'ffnn' or 'cnn'")
+        
         self.config = config
         self.mode = mode
-        self.scaler_path = PROCESSED_DATA_DIR / f"{self.config['setup_name']}_scaler.gz"
-
-        # Load the pre-processed data
+        self.model_type = model_type
+        self.setup_name = self.config['setup_name']
+        
+        # Load the pre-processed data in the correct format
         self._load_data()
 
         # Split data according to the mode and config years
@@ -40,109 +46,119 @@ class FencastDataset(Dataset):
             self._normalize_features()
 
     def _load_data(self):
-        """Loads features and labels from Parquet files."""
-        setup_name = self.config['setup_name']
-        features_path = PROCESSED_DATA_DIR / f"{setup_name}_features.parquet"
-        labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels.parquet"
-
-        if not features_path.exists() or not labels_path.exists():
-            raise FileNotFoundError(
-                f"Processed data not found for setup '{setup_name}'. "
-                "Please run data_processing.py first."
-            )
+        """Loads features and labels based on the model_type."""
+        print(f"[{self.mode}] Loading data for '{self.model_type}' model...")
         
-        print(f"[{self.mode}] Loading data from {features_path.parent}...")
-        self.X = pd.read_parquet(features_path)
-        self.y = pd.read_parquet(labels_path)
+        if self.model_type == 'ffnn':
+            features_path = PROCESSED_DATA_DIR / f"{self.setup_name}_features_ffnn.parquet"
+            labels_path = PROCESSED_DATA_DIR / f"{self.setup_name}_labels_ffnn.parquet"
+            if not features_path.exists() or not labels_path.exists():
+                raise FileNotFoundError(f"FFNN data not found for setup '{self.setup_name}'. Run data processing with --model-target ffnn.")
+            self.X = pd.read_parquet(features_path)
+            self.y = pd.read_parquet(labels_path)
+        
+        elif self.model_type == 'cnn':
+            features_path = PROCESSED_DATA_DIR / f"{self.setup_name}_features_cnn.npz"
+            labels_path = PROCESSED_DATA_DIR / f"{self.setup_name}_labels_cnn.parquet"
+            if not features_path.exists() or not labels_path.exists():
+                raise FileNotFoundError(f"CNN data not found for setup '{self.setup_name}'. Run data processing with --model-target cnn.")
+            
+            with np.load(features_path) as data:
+                self.X = data['features']
+            self.y = pd.read_parquet(labels_path)
 
     def _split_data(self):
-        """Filters the data based on the years specified in the config for the current mode."""
+        """
+        Filters the data based on years. This logic is driven by the label's
+        time index, which works for both NumPy arrays and DataFrames.
+        """
         if self.mode == 'train':
-            # For training, we use all years NOT in validation or test sets
             validation_years = self.config['split_years']['validation']
             test_years = self.config['split_years']['test']
             exclude_years = set(validation_years + test_years)
             print(f"[{self.mode}] Excluding years: {sorted(list(exclude_years))}")
             
-            # Select rows where the index's year is NOT in the exclude list
-            self.X = self.X[~self.X.index.year.isin(exclude_years)]
-            self.y = self.y[~self.y.index.year.isin(exclude_years)]
+            # Create a boolean mask from the label's index
+            mask = ~self.y.index.year.isin(exclude_years)
         else:
-            # For validation or test, we use the specific years listed in the config
             split_years = self.config['split_years'][self.mode]
             print(f"[{self.mode}] Filtering data for years: {split_years}")
             
-            # Select rows where the index's year IS IN the list for the current mode
-            self.X = self.X[self.X.index.year.isin(split_years)]
-            self.y = self.y[self.y.index.year.isin(split_years)]
+            # Create a boolean mask from the label's index
+            mask = self.y.index.year.isin(split_years)
+        
+        # Apply the mask to both features and labels
+        self.X = self.X[mask]
+        self.y = self.y[mask]
 
         if len(self.X) == 0:
             raise ValueError(f"No data found for the years specified for mode '{self.mode}'.")
 
     def _normalize_features(self):
-        """Fits a scaler on the training data and transforms all sets, or loads an existing scaler."""
-        # Get normalization exclusion patterns from config
-        exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', ['day_of_year'])
+        """Applies normalization based on the model type."""
+        if self.model_type == 'ffnn':
+            self._normalize_ffnn()
+        elif self.model_type == 'cnn':
+            self._normalize_cnn()
+
+    def _normalize_ffnn(self):
+        """Fits/loads a StandardScaler for 2D tabular data."""
+        scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_ffnn_scaler.gz"
+        exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', [])
         
-        # Identify features that should not be normalized
-        keep_values_columns = []
-        for pattern in exclude_patterns:
-            keep_values_columns.extend([col for col in self.X.columns if pattern in col])
+        keep_values_columns = [col for col in self.X.columns for pattern in exclude_patterns if pattern in col]
         normalize_columns = [col for col in self.X.columns if col not in keep_values_columns]
         
         if self.mode == 'train':
-            print(f"[{self.mode}] Fitting new scaler on {len(normalize_columns)} features...")
-            print(f"[{self.mode}] Excluding {len(keep_values_columns)} features from normalization: {keep_values_columns}")
+            print(f"[{self.mode}] Fitting new FFNN scaler...")
+            scaler = StandardScaler()
+            self.X[normalize_columns] = scaler.fit_transform(self.X[normalize_columns])
+            joblib.dump(scaler, scaler_path)
+        else:
+            if not scaler_path.exists():
+                raise FileNotFoundError(f"Scaler not found at {scaler_path}. Run training first.")
+            print(f"[{self.mode}] Loading existing FFNN scaler from {scaler_path}...")
+            scaler = joblib.load(scaler_path)
+            self.X[normalize_columns] = scaler.transform(self.X[normalize_columns])
+
+    def _normalize_cnn(self):
+        """Calculates/loads per-channel mean/std for 4D image-like data."""
+        scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_cnn_scaler.npz"
+        
+        if self.mode == 'train':
+            print(f"[{self.mode}] Fitting new CNN scaler (per-channel mean/std)...")
+            # Calculate mean and std per channel across all samples, height, and width
+            # self.X shape: (samples, channels, height, width)
+            mean = np.mean(self.X, axis=(0, 2, 3), keepdims=True)
+            std = np.std(self.X, axis=(0, 2, 3), keepdims=True)
+            # Add a small epsilon to std to prevent division by zero
+            std[std == 0] = 1e-7
             
-            self.scaler = StandardScaler()
-            # fit and transform columns
-            weather_data_scaled = self.scaler.fit_transform(self.X[normalize_columns])
-            
-            # Combine scaled data with unscaled data
-            self.X = pd.concat([
-                pd.DataFrame(weather_data_scaled, columns=normalize_columns, index=self.X.index),
-                self.X[keep_values_columns]
-            ], axis=1)
-            
-            joblib.dump(self.scaler, self.scaler_path)
-        else: # Validation or test mode
-            if not self.scaler_path.exists():
-                raise FileNotFoundError(f"Scaler file not found at {self.scaler_path}. Please run training first.")
-            print(f"[{self.mode}] Loading existing scaler from {self.scaler_path}...")
-            print(f"[{self.mode}] Excluding {len(keep_values_columns)} features from normalization: {keep_values_columns}")
-            
-            self.scaler = joblib.load(self.scaler_path)
-            # Only transform weather columns
-            weather_data_scaled = self.scaler.transform(self.X[normalize_columns])
-            
-            # Combine scaled weather data with unscaled temporal data
-            self.X = pd.concat([
-                pd.DataFrame(weather_data_scaled, columns=normalize_columns, index=self.X.index),
-                self.X[keep_values_columns]
-            ], axis=1)
-            
-        # Reorder columns to maintain consistent feature order
-        self.X = self.X[normalize_columns + keep_values_columns]
+            self.X = (self.X - mean) / std
+            np.savez(scaler_path, mean=mean, std=std)
+        else:
+            if not scaler_path.exists():
+                raise FileNotFoundError(f"Scaler not found at {scaler_path}. Run training first.")
+            print(f"[{self.mode}] Loading existing CNN scaler from {scaler_path}...")
+            with np.load(scaler_path) as data:
+                mean = data['mean']
+                std = data['std']
+            self.X = (self.X - mean) / std
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
-        return len(self.X)
+        return len(self.y)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple:
         """
         Retrieves the feature and label tensors for a given index.
-
-        Args:
-            idx (int): The index of the sample to retrieve.
-
-        Returns:
-            tuple: (feature_tensor, label_tensor)
         """
-        # Get the numpy arrays for the given index
+        # This logic gracefully handles both pd.DataFrame and np.ndarray for self.X
         if isinstance(self.X, pd.DataFrame):
             features = self.X.iloc[idx].values
         else:
             features = self.X[idx]
+        
         labels = self.y.iloc[idx].values
 
         # Convert numpy arrays to PyTorch tensors
@@ -150,7 +166,3 @@ class FencastDataset(Dataset):
         label_tensor = torch.tensor(labels, dtype=torch.float32)
         
         return feature_tensor, label_tensor
-    
-    def get_data(self):
-        """Returns the processed but un-normalized X and y DataFrames."""
-        return self.X, self.y
