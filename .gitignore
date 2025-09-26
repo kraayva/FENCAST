@@ -70,7 +70,7 @@ plots/
 .env
 .envrc
 *.toml
-*.yaml
+#*.yaml
 *.yml
 
 # --- Package Manager Caches ---

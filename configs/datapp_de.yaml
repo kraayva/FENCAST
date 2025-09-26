@@ -1,0 +1,121 @@
+# configs/datapp_de.yaml
+
+# General settings
+setup_name: 'de_uvtzq_scf_NUTS2'
+
+# Data Processing Settings
+data_processing:
+  drop_columns: ['DE50']
+
+# Target data settings
+time_start: '1980-01-01'
+time_end: '2024-12-31'
+target_data_raw: 'data/raw/cfr_NUTS2-DE.csv'
+target_size: 37
+
+# Feature data settings
+input_size_flat: 20297
+input_channels: 1 # Example for CNN: 1 for grayscale/single-variable heatmaps
+era5_data_raw:
+  u_component_of_wind: 'data/raw/era5_de_u_component_of_wind.nc'
+  v_component_of_wind: 'data/raw/era5_de_v_component_of_wind.nc'
+  temperature: 'data/raw/era5_de_temperature.nc'
+  geopotential: 'data/raw/era5_de_geopotential.nc'
+  specific_humidity: 'data/raw/era5_de_specific_humidity.nc'
+
+era5_var_names:
+  u_component_of_wind: 'u'
+  v_component_of_wind: 'v'
+  temperature: 't'
+  geopotential: 'z'
+  specific_humidity: 'q'
+
+era5_dataset_url: 'gs://weatherbench2/datasets/era5/1959-2022-6h-1440x721.zarr'
+
+feature_region:
+  lat_min: 47.0
+  lat_max: 55.0
+  lon_min: 5.0
+  lon_max: 15.0
+
+feature_variables:
+  u_component_of_wind: [850, 300]
+  v_component_of_wind: [850, 300]
+  temperature: [1000, 500]
+  geopotential: [1000, 500]
+  specific_humidity: [925, 700]
+
+feature_level: [500, 850, 1000]
+
+# Dataset splitting configuration
+split_years:
+  # All other years will be used for training
+  validation: 
+    - 2005
+    - 2010
+    - 2015
+  test: 
+    - 2000
+    - 2007
+    - 2012
+    - 2018
+    - 2023
+
+# Model architecture settings for final training (not tuning)
+model:
+  ffnn:
+    hidden_layers: [1024, 512]
+    dropout_rate: 0.3
+  cnn:
+    # Define your final CNN architecture here after tuning
+  batch_sizes:
+    training: 64
+    evaluation: 256
+    tuning: 64
+
+# Hyperparameter Tuning Settings
+tuning:
+  # General settings applicable to all models
+  trials: 30
+  epochs: 20
+  activations: ['ReLU', 'ELU']
+
+  # FFNN-specific hyperparameter search space
+  ffnn:
+    learning_rate:
+      min: 5.0e-6
+      max: 5.0e-3
+      log_scale: true
+    dropout:
+      min: 0.05
+      max: 0.3
+    hidden_layers:
+      min_layers: 3
+      max_layers: 4
+      min_units: 256
+      max_units: 2048
+  
+  # CNN-specific hyperparameter search space
+  cnn:
+    learning_rate:
+      min: 1.0e-5
+      max: 1.0e-3
+      log_scale: true
+    dropout:
+      min: 0.1
+      max: 0.2
+    conv_layers:
+      min_layers: 2
+      max_layers: 2
+    filters:
+      min: 16
+      max: 128
+      step: 16
+    kernel_size: [3, 5]
+
+# Feature Engineering Settings
+features:
+  temporal:
+    day_of_year: true
+  normalization:
+    exclude_patterns: ['day_of_year'] # Patterns to exclude from normalization

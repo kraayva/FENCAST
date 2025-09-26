@@ -1,0 +1,13 @@
+
+
+## PATHS
+data_dir: data
+data_raw_dir: data/raw
+data_processed_dir: data/processed
+data_tmp_dir: data/tmp
+
+## URLS
+gsWB2_graphcast_data: gs://weatherbench2/datasets/graphcast/
+gsWB2_era5_data: gs://weatherbench2/datasets/era5/
+gsWB2_pangu_data: gs://weatherbench2/datasets/pangu/
+gsWB2_neuralgcm_data: gs://weatherbench2/datasets/neuralgcm_deterministic/
