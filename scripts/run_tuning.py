@@ -20,10 +20,6 @@ from fencast.utils.tools import setup_logger
 logger = setup_logger("hyperparameter_tuning")
 
 
-## --------------------------------- ##
-## --- OPTUNA OBJECTIVE FUNCTION --- ##
-## --------------------------------- ##
-
 def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     """
     Optuna objective function to tune hyperparameters for a given model architecture.
@@ -33,7 +29,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     logger.info(f"--- Starting Trial {trial.number} for model_type='{model_type}' ---")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Get the correct tuning configuration for the specified model
     tuning_config = config.get('tuning', {})
     model_tuning_config = tuning_config.get(model_type, {})
     if not model_tuning_config:
@@ -41,7 +36,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     params = {}
 
-    # --- Model-specific hyperparameter suggestions ---
     if model_type == 'ffnn':
         lr_config = model_tuning_config.get('learning_rate', {})
         dropout_config = model_tuning_config.get('dropout', {})
@@ -73,19 +67,19 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
             n_filters = trial.suggest_int(f"n_filters_l{i}", filters_config.get('min'), filters_config.get('max'), step=filters_config.get('step', 1))
             out_channels.append(n_filters)
         params['out_channels'] = out_channels
+        
+        # NOTE: You could also tune the final dense layers here if desired
+        # params['dense_layers'] = ...
 
-    # --- Common hyperparameter suggestions ---
     params['activation_name'] = trial.suggest_categorical("activation", tuning_config.get('activations', ["ReLU", "ELU"]))
     logger.info(f"Trial {trial.number} Parameters: {json.dumps(params, indent=4)}")
 
-    # General parameters from config
     output_size = config['target_size']
     batch_size = config.get('model', {}).get('batch_sizes', {}).get('tuning', 64)
     epochs = tuning_config.get('epochs', 20)
 
     # 2. DATA LOADING
     # ============================================================================
-    # The FencastDataset class should handle the data shape based on model_type
     logger.info(f"Trial {trial.number}: Loading data...")
     train_dataset = FencastDataset(config=config, mode='train', model_type=model_type)
     validation_dataset = FencastDataset(config=config, mode='validation', model_type=model_type)
@@ -96,24 +90,18 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     # 3. MODEL, LOSS, and OPTIMIZER INITIALIZATION
     # ============================================================================
     model = None
-    activation_fn = getattr(nn, params['activation_name'])()
-
     if model_type == 'ffnn':
         model = DynamicFFNN(
             input_size=config['input_size_flat'],
             output_size=output_size,
             hidden_layers=params['hidden_layers'],
             dropout_rate=params['dropout_rate'],
-            activation_fn=activation_fn
+            activation_fn=getattr(nn, params['activation_name'])()
         ).to(device)
     elif model_type == 'cnn':
         model = DynamicCNN(
-            input_channels=config.get('input_channels', 1),
-            output_size=output_size,
-            out_channels_list=params['out_channels'],
-            kernel_size=params['kernel_size'],
-            dropout_rate=params['dropout_rate'],
-            activation_fn=activation_fn
+            config=config,
+            params=params
         ).to(device)
 
     criterion = nn.MSELoss()
@@ -125,8 +113,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     for epoch in range(epochs):
         model.train()
-        train_losses = []
-        # --- CHANGE IS HERE ---
         for batch in train_loader:
             if model_type == 'cnn':
                 spatial_features, temporal_features, labels = batch
@@ -138,8 +124,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
                 outputs = model(features)
             
             loss = criterion(outputs, labels)
-            # --- END OF CHANGE ---
-            train_losses.append(loss.item())
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -148,9 +132,16 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         model.eval()
         validation_losses = []
         with torch.no_grad():
-            for features, labels in validation_loader:
-                features, labels = features.to(device), labels.to(device)
-                outputs = model(features)
+            for batch in validation_loader:
+                if model_type == 'cnn':
+                    spatial_features, temporal_features, labels = batch
+                    spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+                    outputs = model(spatial_features, temporal_features)
+                else: # FFNN
+                    features, labels = batch
+                    features, labels = features.to(device), labels.to(device)
+                    outputs = model(features)
+                
                 loss = criterion(outputs, labels)
                 validation_losses.append(loss.item())
 
@@ -169,11 +160,8 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     return best_validation_loss
 
 
-## ------------------------------ ##
-## --- MAIN SCRIPT EXECUTION ---- ##
-## ------------------------------ ##
-
 if __name__ == '__main__':
+    # ... (The main execution block is correct and does not need changes) ...
     parser = argparse.ArgumentParser(description="Run hyperparameter tuning for a given model architecture.")
     parser.add_argument(
         '--model-type', '-m',
@@ -190,7 +178,6 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    # --- 1. SETUP STUDY ---
     config = load_config(args.config)
     current_date = datetime.now().strftime('%Y%m%d')
     setup_name = config.get('setup_name', 'default_setup')
@@ -215,25 +202,21 @@ if __name__ == '__main__':
         pruner=pruner
     )
 
-    # --- 2. RUN OPTIMIZATION ---
     n_trials = config.get('tuning', {}).get('trials', 50)
-    # Use a lambda function to pass additional arguments to the objective function
     study.optimize(lambda trial: objective(trial, model_type=args.model_type, config=config), n_trials=n_trials, n_jobs=2)
     
-    # --- 3. LOG AND SAVE RESULTS ---
     logger.info("--- Tuning Finished ---")
-    logger.info("Study statistics: ")
-    logger.info(f"  Number of finished trials: {len(study.trials)}")
-    
-    best_trial = study.best_trial
-    logger.info("Best trial:")
-    logger.info(f"  Value (Best Validation Loss): {best_trial.value:.6f}")
-    params_str = json.dumps(best_trial.params, indent=4)
-    logger.info(f"  Params: \n{params_str}")
-
-    # --- 4. VISUALIZE AND SAVE PLOTS ---
-    logger.info("--- Generating and saving visualizations for the finished study ---")
     if len(study.trials) > 0:
+        logger.info("Study statistics: ")
+        logger.info(f"  Number of finished trials: {len(study.trials)}")
+        
+        best_trial = study.best_trial
+        logger.info("Best trial:")
+        logger.info(f"  Value (Best Validation Loss): {best_trial.value:.6f}")
+        params_str = json.dumps(best_trial.params, indent=4)
+        logger.info(f"  Params: \n{params_str}")
+
+        logger.info("--- Generating and saving visualizations for the finished study ---")
         plots = {
             "optimization_history": optuna.visualization.plot_optimization_history,
             "param_importances": optuna.visualization.plot_param_importances,
@@ -251,4 +234,4 @@ if __name__ == '__main__':
                 
         logger.info(f"Plots saved to {results_dir}")
     else:
-        logger.info("No trials completed, skipping plot generation.")
+        logger.info("No trials were completed. Skipping results and plots.")
