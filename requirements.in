@@ -23,3 +23,4 @@ fastparquet
 optuna
 plotly
 pip-tools
+optuna-dashboard

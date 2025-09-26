@@ -152,7 +152,7 @@ if __name__ == '__main__':
     )
     
     n_trials = config.get('tuning', {}).get('trials', 50)
-    study.optimize(objective, n_trials=n_trials)
+    study.optimize(objective, n_trials=n_trials, n_jobs=4)
     
     # --- 3. Log and Save Results ---
     logger.info("--- Tuning Finished ---")
