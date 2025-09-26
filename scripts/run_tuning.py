@@ -208,7 +208,7 @@ if __name__ == '__main__':
     n_trials = config.get('tuning', {}).get('trials', 50)
     # Use a lambda function to pass additional arguments to the objective function
     study.optimize(lambda trial: objective(trial, model_type=args.model_type, config=config), n_trials=n_trials, n_jobs=4)
-
+    
     # --- 3. LOG AND SAVE RESULTS ---
     logger.info("--- Tuning Finished ---")
     logger.info("Study statistics: ")
