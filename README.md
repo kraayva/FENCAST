@@ -1,37 +1,138 @@
-# FENCAST
-Fine-Tuning MLWP Models for Improved Forecasts in the Energy Sector
+# FENCAST: Fine-tuning ENergy predictions from weather foreCASTs
 
-FENCAST is a Projet to investigate the capability of MLWP models to forecast weather values applicable to predict power generation values. This document explains how to set up the project, train and evaluate a ML algorithm to predict power generation values and use this algorithm to compare the output of several MLWPs.
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-Setup: First, clone the repository and create a virtual environment inside the project folder. After that, activate the environment and install the dependencies from the requirements.txt file.
+A machine learning project to predict solar power capacity factors (CF) for German NUTS-2 regions using ERA5 weather reanalysis data.
 
-Development mode: If you are working on FENCAST itself, install it in editable mode using "pip install -e .". This ensures that any changes you make to the code are reflected immediately in your environment without reinstalling the package.
+## About The Project
 
-Using FENCAST: To use FENCAST after setting up the environment, install it in editable mode as described above. 
+FENCAST investigates the capability of machine learning models to forecast energy generation values from meteorological data. This initial version implements a complete pipeline to:
+1.  Process gridded, multi-level ERA5 weather data (temperature, wind, etc.).
+2.  Train a dynamic feed-forward neural network (FFNN) to predict solar capacity factors from the Copernicus Climate Change Service (C3S).
+3.  Systematically tune the model's hyperparameters using Optuna.
+4.  Evaluate the final model against a persistence baseline and analyze feature importance.
 
-## Workflow
+---
+## Getting Started
 
-1. **Data Processing**: Process raw data into training-ready format
-   ```bash
-   python scripts/run_data_processing.py --config datapp_de
-   ```
+Follow these steps to set up your local development environment.
 
-2. **Hyperparameter Tuning**: Find optimal model parameters
-   ```bash
-   python scripts/run_tuning.py
-   ```
+1.  **Clone the repository**
+    ```bash
+    git clone [https://github.com/your-username/FENCAST.git](https://github.com/your-username/FENCAST.git)
+    cd FENCAST
+    ```
 
-3. **Final Training**: Train the model with best hyperparameters
-   ```bash
-   python scripts/run_training.py
-   ```
+2.  **Create and activate a virtual environment**
+    ```bash
+    # For Windows
+    python -m venv .venv
+    .\.venv\Scripts\activate
 
-4. **Evaluation**: Evaluate the trained model
-   ```bash
-   python scripts/evaluate.py
-   ```
+    # For macOS/Linux
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
 
-5. **Feature Importance**: Analyze feature contributions
-   ```bash
-   python scripts/feature_importance.py
-   ```
+3.  **Install dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Install the project in editable mode** (Recommended for development)
+    This ensures that changes you make to the source code are immediately available.
+    ```bash
+    pip install -e .
+    ```
+
+---
+## Configuration
+
+The project's behavior is controlled by YAML files in the `configs/` directory.
+
+* `global.yaml`: Defines project-wide paths for data, logs, and results directories.
+* `datapp_de.yaml`: Defines an experiment-specific setup. This includes paths to raw data files, the time range for analysis, the train/validation/test split years, and a unique name for the setup (`setup_name`).
+
+---
+## Workflow ⚙️
+
+This is the standard end-to-end workflow for training and evaluating a model. Each step is performed by a dedicated script.
+
+### 1. Process Raw Data
+
+This script loads the raw NetCDF and CSV files specified in `configs/datapp_de.yaml`, processes them into a flat feature matrix and a label vector, and saves the clean data as Parquet files in the `data/processed/` directory.
+
+```bash
+python src/fencast/data_processing.py
+```
+*You will be prompted to confirm saving the files.*
+
+### 2. Find Optimal Hyperparameters
+
+This script uses Optuna to run a hyperparameter tuning study. It will train dozens of models with different architectures and learning rates to find the combination that produces the lowest validation loss. The study progress is saved to a SQLite database (`.db`) in a timestamped folder inside `results/`.
+
+**Note:** This step is computationally intensive and will take a long time to run.
+
+```bash
+python scripts/run_tuning.py
+```
+*Results, including visualization plots, are saved in the `results/{setup_name}/study_{date}/` directory.*
+
+### 3. Train the Final Model
+
+After tuning, this script loads the best hyperparameters found by the latest Optuna study. It then trains one final model on the combined training and validation data and saves a complete model checkpoint (`.pth`) in the `model/` directory.
+
+```bash
+python scripts/train_final_model.py
+```
+
+### 4. Evaluate the Model
+
+This script loads your final trained model and evaluates its performance on the completely unseen **test set**. It calculates performance metrics (RMSE, MAE) and compares them against a persistence baseline.
+
+```bash
+python scripts/evaluate.py
+```
+*Result plots (time-series and scatter plots) are saved to the latest study directory in `results/`.*
+
+### 5. Analyze Feature Importance
+
+This script uses the final trained model to perform a permutation feature importance analysis. It helps to understand which weather variables (e.g., temperature vs. wind) and which pressure levels (e.g., surface vs. upper atmosphere) were most important for the model's predictions.
+
+```bash
+python scripts/feature_importance.py
+```
+*Importance bar charts are saved in the `results/` directory.*
+
+---
+## Project Structure
+
+```
+FENCAST/
+├── configs/
+│   ├── global.yaml
+│   └── datapp_de.yaml
+├── data/
+│   ├── raw/
+│   └── processed/
+├── model/
+│   └── de_uvtzq_scf_NUTS2_best_model.pth
+├── results/
+│   └── de_uvtzq_scf_NUTS2/
+│       └── study_20250930/
+│           ├── study_20250930.db
+│           └── *.html, *.png
+├── scripts/
+│   ├── run_tuning.py
+│   ├── train_final_model.py
+│   ├── evaluate.py
+│   └── feature_importance.py
+└── src/
+    └── fencast/
+        ├── data_processing.py
+        ├── dataset.py
+        ├── models.py
+        └── utils/
+            ├── paths.py
+            └── tools.py
+```
