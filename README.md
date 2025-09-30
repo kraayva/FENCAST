@@ -60,18 +60,20 @@ This is the standard end-to-end workflow for training and evaluating a model. Ea
 
 ### 1. Process Raw Data
 
-This script loads the raw NetCDF and CSV files specified in `configs/datapp_de.yaml`, processes them into a flat feature matrix and a label vector, and saves the clean data as Parquet files in the `data/processed/` directory.
+This script loads the raw NetCDF and CSV files specified in the config file (e.g. `configs/datapp_de.yaml`), processes them into a flat feature matrix and a label vector, and saves the clean data as Parquet files in the `data/processed/` directory.
+
+To process raw data, run the following command and specify your configuration file using the `--config` option:
 
 ```bash
-python src/fencast/data_processing.py
+python src/fencast/data_processing.py --config datapp_de
 ```
-*You will be prompted to confirm saving the files.*
+
+`datapp_de` is the default option, and it will use the config file `config/datapp_de.yaml`. Replace it with the configuration you want to use to ensure the script uses the correct settings for data sources, time ranges, and region.
+```
 
 ### 2. Find Optimal Hyperparameters
 
 This script uses Optuna to run a hyperparameter tuning study. It will train dozens of models with different architectures and learning rates to find the combination that produces the lowest validation loss. The study progress is saved to a SQLite database (`.db`) in a timestamped folder inside `results/`.
-
-**Note:** This step is computationally intensive and will take a long time to run.
 
 ```bash
 python scripts/run_tuning.py
@@ -116,11 +118,11 @@ FENCAST/
 │   ├── raw/
 │   └── processed/
 ├── model/
-│   └── de_uvtzq_scf_NUTS2_best_model.pth
+│   └── *setup name*.pth
 ├── results/
-│   └── de_uvtzq_scf_NUTS2/
-│       └── study_20250930/
-│           ├── study_20250930.db
+│   └── *setup name*/
+│       └── *study_date*/
+│           ├── *study_date.db*
 │           └── *.html, *.png
 ├── scripts/
 │   ├── run_tuning.py
