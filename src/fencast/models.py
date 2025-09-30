@@ -73,9 +73,9 @@ class DynamicCNN(nn.Module):
                 stride=1,
                 padding=(kernel_size // 2) # Preserves dimensions with stride 1
             ))
-            cnn_layers.append(activation_fn)
-            # Add pooling for downsampling after each convolutional layer
-            cnn_layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+            cnn_layers.append(nn.BatchNorm2d(out_channels)) # Batch normalization for stability
+            cnn_layers.append(activation_fn) # Activation function for non-linearity
+            cnn_layers.append(nn.MaxPool2d(kernel_size=2, stride=2)) # Downsampling
             in_channels = out_channels
             
         self.cnn_body = nn.Sequential(*cnn_layers)

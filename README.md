@@ -8,7 +8,7 @@ A machine learning project to predict solar power capacity factors (CF) for Germ
 
 FENCAST investigates the capability of machine learning models to forecast energy generation values from meteorological data. This initial version implements a complete pipeline to:
 1.  Process gridded, multi-level ERA5 weather data (temperature, wind, etc.).
-2.  Train a dynamic feed-forward neural network (FFNN) to predict solar capacity factors from the Copernicus Climate Change Service (C3S).
+2.  Train different machine learning architectures (simple FFNN, CNN) to predict solar capacity factors from the Copernicus Climate Change Service (C3S).
 3.  Systematically tune the model's hyperparameters using Optuna.
 4.  Evaluate the final model against a persistence baseline and analyze feature importance.
 

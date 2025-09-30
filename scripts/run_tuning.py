@@ -57,7 +57,16 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         conv_layers_config = model_tuning_config.get('conv_layers', {})
         filters_config = model_tuning_config.get('filters', {})
 
+        # Dynamically suggest learning rate scheduler parameters if a scheduler is used
         params['lr'] = trial.suggest_float("lr", lr_config.get('min'), lr_config.get('max'), log=lr_config.get('log_scale'))
+        scheduler_name = trial.suggest_categorical("scheduler", ["None", "ReduceLROnPlateau"])
+        scheduler_params = {}
+        if scheduler_name == "ReduceLROnPlateau":
+            # Let Optuna tune the scheduler's patience and reduction factor
+            scheduler_params['patience'] = trial.suggest_int("patience", 2, 5)
+            scheduler_params['factor'] = trial.suggest_float("factor", 0.1, 0.5)
+        
+        # Other hyperparameters
         params['dropout_rate'] = trial.suggest_float("dropout", dropout_config.get('min'), dropout_config.get('max'))
         params['n_conv_layers'] = trial.suggest_int("n_conv_layers", conv_layers_config.get('min_layers'), conv_layers_config.get('max_layers'))
         params['kernel_size'] = trial.suggest_categorical("kernel_size", model_tuning_config.get('kernel_size', [3, 5]))
@@ -76,7 +85,7 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     output_size = config['target_size']
     batch_size = config.get('model', {}).get('batch_sizes', {}).get('tuning', 64)
-    epochs = tuning_config.get('epochs', 20)
+    epochs = tuning_config.get('epochs', 25)
 
     # 2. DATA LOADING
     # ============================================================================
@@ -105,6 +114,18 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         ).to(device)
 
     criterion = nn.MSELoss()
+
+    scheduler = None
+    if scheduler_name == "ReduceLROnPlateau":
+        logger.info(f"Trial {trial.number}: Using ReduceLROnPlateau scheduler.")
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=scheduler_params['factor'],
+            patience=scheduler_params['patience'],
+            verbose=False # Keep the log clean, Optuna handles reporting
+        )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
 
     # 4. TRAINING & VALIDATION LOOP
@@ -150,6 +171,9 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         if avg_validation_loss < best_validation_loss:
             best_validation_loss = avg_validation_loss
 
+        if scheduler:
+            scheduler.step(avg_validation_loss)
+
         trial.report(avg_validation_loss, epoch)
 
         if trial.should_prune():
@@ -176,13 +200,19 @@ if __name__ == '__main__':
         default='datapp_de',
         help='Configuration file name (e.g., datapp_de) without the .yaml extension.'
     )
+    parser.add_argument(
+        '--study-name', '-s',
+        type=str,
+        default=None,
+        help='Optional study name for the Optuna study.'
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
     current_date = datetime.now().strftime('%Y%m%d')
     setup_name = config.get('setup_name', 'default_setup')
-    study_name = f"study_{args.model_type}_{setup_name}_{current_date}"
-    
+    study_name = args.study_name or f"study_{args.model_type}_{setup_name}_{current_date}"
+
     results_dir = PROJECT_ROOT / "results" / setup_name / study_name
     results_dir.mkdir(parents=True, exist_ok=True)
 
