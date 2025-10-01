@@ -77,8 +77,8 @@ model:
 tuning:
   # General settings applicable to all models
   trials: 30
-  epochs: 20
-  activations: ['ReLU', 'ELU']
+  epochs: 25
+  activations: ['ELU']
 
   # FFNN-specific hyperparameter search space
   ffnn:

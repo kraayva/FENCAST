@@ -114,7 +114,7 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         ).to(device)
 
     criterion = nn.MSELoss()
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
     scheduler = None
     if scheduler_name == "ReduceLROnPlateau":
         logger.info(f"Trial {trial.number}: Using ReduceLROnPlateau scheduler.")
@@ -122,11 +122,8 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
             optimizer,
             mode='min',
             factor=scheduler_params['factor'],
-            patience=scheduler_params['patience'],
-            verbose=False # Keep the log clean, Optuna handles reporting
+            patience=scheduler_params['patience']
         )
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
 
     # 4. TRAINING & VALIDATION LOOP
     # ============================================================================
@@ -222,7 +219,10 @@ if __name__ == '__main__':
 
     db_path = results_dir / f"{study_name}.db"
     storage_name = f"sqlite:///{db_path}"
-    pruner = optuna.pruners.MedianPruner()
+    pruner = optuna.pruners.MedianPruner(
+        n_startup_trials=5, # number of trials before pruning
+        n_warmup_steps=3 # number of epochs before pruning
+    )
 
     study = optuna.create_study(
         study_name=study_name,

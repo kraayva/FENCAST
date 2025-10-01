@@ -64,17 +64,20 @@ def run_training(config: dict, model_type: str, params: dict):
         model = DynamicFFNN(**model_args).to(device)
     elif model_type == 'cnn':
         model_args = {
-            'input_channels': config.get('input_channels', 1),
-            'output_size': config['target_size'],
-            'out_channels_list': params['out_channels'],
-            'kernel_size': params['kernel_size'],
-            'dropout_rate': params['dropout_rate'],
-            'activation_fn': activation_fn
+            'config': config,
+            'params': params
         }
         model = DynamicCNN(**model_args).to(device)
     
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min',      # We want to minimize the validation loss
+        factor=0.2,      # Reduce LR by a factor of 0.2 (e.g., 0.001 -> 0.0002)
+        patience=3,      # Wait 3 epochs with no improvement before reducing LR
+    )
 
     # 4. TRAINING LOOP
     # =================================================================================
@@ -112,12 +115,24 @@ def run_training(config: dict, model_type: str, params: dict):
         model.eval()
         validation_losses = []
         with torch.no_grad():
-            for features, labels in validation_loader:
-                features, labels = features.to(device), labels.to(device)
-                outputs = model(features)
+            for batch in validation_loader:
+                if model_type == 'cnn':
+                    spatial_features, temporal_features, labels = batch
+                    spatial_features = spatial_features.to(device)
+                    temporal_features = temporal_features.to(device)
+                    labels = labels.to(device)
+                    outputs = model(spatial_features, temporal_features)
+                else:  # FFNN
+                    features, labels = batch
+                    features, labels = features.to(device), labels.to(device)
+                    outputs = model(features)
+                
                 loss = criterion(outputs, labels)
                 validation_losses.append(loss.item())
         avg_validation_loss = np.mean(validation_losses)
+
+        # Update the learning rate scheduler with the new validation loss
+        scheduler.step(avg_validation_loss)
 
         # Save the best model checkpoint
         if avg_validation_loss < best_validation_loss:
