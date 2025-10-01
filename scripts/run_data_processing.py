@@ -2,18 +2,20 @@
 
 import argparse
 from pathlib import Path
+import numpy as np # Import numpy for saving arrays
 
-from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, PROJECT_ROOT
+from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
 from fencast.data_processing import load_and_prepare_data
 from fencast.utils.tools import setup_logger
 
-def run_data_processing(config_name: str = "datapp_de", force_save: bool = True):
+def run_data_processing(config_name: str, model_target: str, force_save: bool):
     """
     Process raw data according to configuration and save processed files.
     
     Args:
-        config_name (str): Name of the configuration file to use
-        force_save (bool): If True, save without prompting
+        config_name (str): Name of the configuration file to use.
+        model_target (str): The target model architecture ('ffnn' or 'cnn').
+        force_save (bool): If True, save without prompting.
     """
     logger = setup_logger("data_processing")
     
@@ -22,47 +24,50 @@ def run_data_processing(config_name: str = "datapp_de", force_save: bool = True)
         logger.info(f"Loading configuration '{config_name}'...")
         config = load_config(config_name)
         
-        # 2. Process the data
-        logger.info("Starting data processing...")
-        X_processed, y_processed = load_and_prepare_data(config=config)
+        # 2. Process the data based on the model target
+        logger.info(f"Starting data processing for target: '{model_target}'...")
+        # This function must now accept 'model_target' and return the correct data format
+        X_processed, y_processed = load_and_prepare_data(config=config, model_target=model_target)
         
-        # 3. Save the results
+        # 3. Define paths and save the results
         setup_name = config.get('setup_name', 'default_setup')
-        features_path = PROCESSED_DATA_DIR / f"{setup_name}_features.parquet"
-        labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels.parquet"
+        PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Check if files already exist
-        files_exist = features_path.exists() and labels_path.exists()
-        
-        if files_exist and not force_save:
-            logger.warning(f"Processed files already exist at {PROCESSED_DATA_DIR}")
-            logger.warning(f"  - {features_path.name}")
-            logger.warning(f"  - {labels_path.name}")
-            response = input("\nOverwrite existing files? (y/n): ").lower()
-            should_save = response == 'y'
-        else:
-            should_save = True
+        # Use different file extensions based on the target
+        if model_target == 'ffnn':
+            features_path = PROCESSED_DATA_DIR / f"{setup_name}_features_ffnn.parquet"
+            labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+        elif model_target == 'cnn':
+            features_path = PROCESSED_DATA_DIR / f"{setup_name}_features_cnn.npz"
+            labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet" # Labels are likely still 2D
+
+        # Check for existing files and prompt for overwrite if necessary
+        # (This logic remains largely the same)
+        should_save = True
+        if features_path.exists() and not force_save:
+            logger.warning(f"Processed file already exists: {features_path}")
+            response = input("Overwrite existing file? (y/n): ").lower()
+            should_save = (response == 'y')
             
         if should_save:
-            # Convert data types
-            data_type = config.get('data_processing', {}).get('data_type', 'float32')
-            logger.info(f"Converting data to {data_type}...")
-            X_processed = X_processed.astype(data_type)
-            y_processed = y_processed.astype(data_type)
+            logger.info(f"Saving processed data to {PROCESSED_DATA_DIR}...")
             
-            # Create directories and save
-            PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            
-            logger.info(f"Saving processed data...")
-            X_processed.to_parquet(features_path)
-            y_processed.to_parquet(labels_path)
-            
-            logger.info(f"✅ Data processing complete!")
+            # Saving logic depends on the model target
+            if model_target == 'ffnn':
+                X_processed.to_parquet(features_path)
+                y_processed.to_parquet(labels_path)
+                logger.info(f"  Shape:    {X_processed.shape[0]} samples, {X_processed.shape[1]} features")
+            elif model_target == 'cnn':
+                # Save features as a compressed NumPy array and labels as Parquet
+                np.savez_compressed(features_path, features=X_processed)
+                y_processed.to_parquet(labels_path)
+                logger.info(f"  Features Shape: {X_processed.shape}")
+
+            logger.info(f"Data processing complete!")
             logger.info(f"   Features: {features_path}")
             logger.info(f"   Labels:   {labels_path}")
-            logger.info(f"   Shape:    {X_processed.shape[0]} samples, {X_processed.shape[1]} features")
         else:
-            logger.info("Data processing completed but files were not saved.")
+            logger.info("Data processing was cancelled. No files were saved.")
             
     except Exception as e:
         logger.error(f"Data processing failed: {e}")
@@ -70,20 +75,28 @@ def run_data_processing(config_name: str = "datapp_de", force_save: bool = True)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Process raw data for FENCAST training')
-    parser.add_argument('--config', '-c', 
-                       default='datapp_de',
-                       help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--force-save', '-f',
-                       action='store_true',
-                       help='Save without prompting (overwrite existing files)')
-    parser.add_argument('--quiet', '-q',
-                       action='store_true', 
-                       help='Skip confirmation prompts')
+    parser = argparse.ArgumentParser(description='Process raw data for model training.')
+    parser.add_argument(
+        '--config', '-c', 
+        default='datapp_de',
+        help='Configuration file name (default: datapp_de)'
+    )
+    parser.add_argument(
+        '--model-target', '-m',
+        required=True,
+        choices=['ffnn', 'cnn'],
+        help='The target model architecture to process data for.'
+    )
+    parser.add_argument(
+        '--force-save', '-f',
+        action='store_true',
+        help='Save without prompting (overwrite existing files)'
+    )
     
     args = parser.parse_args()
     
-    # If quiet mode, force save without prompting
-    force_save = args.force_save or args.quiet
-    
-    run_data_processing(config_name=args.config, force_save=force_save)
+    run_data_processing(
+        config_name=args.config, 
+        model_target=args.model_target,
+        force_save=args.force_save
+    )

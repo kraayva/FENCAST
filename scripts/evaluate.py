@@ -4,160 +4,193 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
-import optuna
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 import torch.nn as nn
+import argparse
+from pathlib import Path
 
 # Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
-from fencast.models import DynamicFFNN
-from fencast.utils.tools import setup_logger
+from fencast.models import DynamicFFNN, DynamicCNN
+from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("evaluation")
 
-def get_predictions(model, data_loader, device):
+def get_predictions(model, data_loader, device, model_type: str):
+    # ... (This function is correct and requires no changes) ...
     """Runs the model on the test set and returns predictions and labels."""
     model.eval()
-    all_predictions = []
-    all_labels = []
+    all_predictions, all_labels = [], []
     with torch.no_grad():
-        for features, labels in data_loader:
-            features = features.to(device)
-            outputs = model(features)
+        for batch in data_loader:
+            if model_type == 'cnn':
+                spatial_features, temporal_features, labels = batch
+                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+                outputs = model(spatial_features, temporal_features)
+            else: # FFNN
+                features, labels = batch
+                features, labels = features.to(device), labels.to(device)
+                outputs = model(features)
+
             all_predictions.append(outputs.cpu().numpy())
             all_labels.append(labels.cpu().numpy())
-    
+
     all_predictions = np.concatenate(all_predictions, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     return all_predictions, all_labels
 
-def calculate_persistence_rmse(labels_df: pd.DataFrame):
-    """Calculates the RMSE for the persistence (naive) baseline."""
+def calculate_persistence_metrics(labels_df: pd.DataFrame):
+    """Calculates RMSE and MAE for the persistence (naive) baseline."""
     persistence_preds = labels_df.shift(1)
+    # Align by dropping the first row which has no prediction
     valid_labels = labels_df.iloc[1:]
     valid_preds = persistence_preds.iloc[1:]
-    return np.sqrt(mean_squared_error(valid_labels, valid_preds))
+    rmse = np.sqrt(mean_squared_error(valid_labels, valid_preds))
+    mae = mean_absolute_error(valid_labels, valid_preds)
+    return rmse, mae
 
-
-def create_plots(labels_df, nn_preds_df, persistence_preds_df, results_dir, time_name='timeseries_plot.png', scatter_name='scatter_plot_nn.png'):
-    """Creates and saves time-series and scatter plots for both models."""
-    # --- Time-Series Plot (with Baseline) ---
-    region_to_plot = labels_df.columns[0]
+def calculate_climatology_baseline(labels_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Calculates a climatology baseline.
+    For each day in the test set, the prediction is the average of that
+    day's value over a historical period (1990-1999).
+    """
+    logger.info("Calculating climatology baseline...")
     
-    if not labels_df.empty:
-        start_date = labels_df.index.min()
-        end_date = start_date + pd.Timedelta(days=30)
-        labels_slice = labels_df.loc[start_date:end_date]
-        nn_preds_slice = nn_preds_df.loc[start_date:end_date]
-        persistence_preds_slice = persistence_preds_df.loc[start_date:end_date]
-        plot_title = f'Predictions vs Actuals for {region_to_plot} - {start_date.strftime("%B %Y")}'
-    else:
-        labels_slice, nn_preds_slice, persistence_preds_slice = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        plot_title = f'Predictions vs Actuals for {region_to_plot} (No data available)'
+    # 1. Load the full, raw target dataset
+    full_cf_path = Path(config['target_data_raw'])
+    full_df = pd.read_csv(full_cf_path, index_col='Date', parse_dates=True)
+    
+    # 2. Filter for the historical reference period (1990-1999)
+    historical_data = full_df.loc['1990':'1999']
+    
+    # 3. Calculate the mean value for each day of the year (1-366)
+    # Grouping by month and day handles leap years correctly.
+    daily_climatology = historical_data.groupby([historical_data.index.month, historical_data.index.day]).mean()
+    daily_climatology.index.names = ['month', 'day']
+    
+    # 4. Create predictions for the test set dates
+    # Create month and day columns in a temporary df to map the averages
+    preds_df = pd.DataFrame(index=labels_df.index)
+    preds_df['month'] = preds_df.index.month
+    preds_df['day'] = preds_df.index.day
+    
+    # Merge the daily averages onto the test set dates
+    merged = pd.merge(preds_df, daily_climatology, on=['month', 'day'], how='left')
+    
+    merged = merged.fillna(method='ffill').fillna(method='bfill')
+    
+    merged.index = labels_df.index
+    climatology_preds_df = merged[labels_df.columns]
+    
+    return climatology_preds_df
+
+def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir, model_type):
+    """Creates and saves time-series and scatter plots."""
+    persistence_preds_df = labels_df.shift(1)
+    
+    # --- Time-Series Plot (with Baselines) ---
+    region_to_plot = labels_df.columns[0]
+    start_date = labels_df.index.min()
+    end_date = start_date + pd.Timedelta(days=30)
+    plot_slice = slice(start_date, end_date)
 
     plt.figure(figsize=(15, 7))
-    if not labels_slice.empty:
-        plt.plot(labels_slice.index, labels_slice[region_to_plot], label='Actual Values', color='black', linewidth=2)
-        plt.plot(nn_preds_slice.index, nn_preds_slice[region_to_plot], label='NN Predictions', color='blue', linestyle='--')
-        plt.plot(persistence_preds_slice.index, persistence_preds_slice[region_to_plot], label='Persistence Baseline', color='green', linestyle=':')
+    plt.plot(labels_df.loc[plot_slice].index, labels_df.loc[plot_slice, region_to_plot], label='Actual Values', color='black', linewidth=2)
+    plt.plot(nn_preds_df.loc[plot_slice].index, nn_preds_df.loc[plot_slice, region_to_plot], label=f'{model_type.upper()} Predictions', color='blue', linestyle='--')
+    plt.plot(persistence_preds_df.loc[plot_slice].index, persistence_preds_df.loc[plot_slice, region_to_plot], label='Persistence Baseline', color='green', linestyle=':')
+ 
+    plt.plot(climatology_preds_df.loc[plot_slice].index, climatology_preds_df.loc[plot_slice, region_to_plot], label='Climatology Baseline', color='red', linestyle='-.')
     
-    plt.title(plot_title)
-    plt.xlabel('Date')
-    plt.ylabel('Capacity Factor')
-    plt.legend()
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.savefig(results_dir / time_name)
-    logger.info(f"Time-series plot saved as {time_name}.")
+    plt.title(f'{model_type.upper()} Predictions vs Actuals for {region_to_plot} - {start_date.strftime("%B %Y")}')
+    plt.xlabel('Date'); plt.ylabel('Capacity Factor')
+    plt.legend(); plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.savefig(results_dir / f'timeseries_plot_{model_type}.png')
+    logger.info(f"Time-series plot saved to {results_dir}.")
+    plt.close()
 
-    # --- Scatter Plot for Neural Network ---
-    plt.figure(figsize=(8, 8))
-    sample_indices = np.random.choice(labels_df.size, size=min(5000, labels_df.size), replace=False)
-    plt.scatter(labels_df.values.flatten()[sample_indices], nn_preds_df.values.flatten()[sample_indices], alpha=0.3, s=10)
-    plt.plot([0, 1], [0, 1], 'r--', label='Perfect Prediction (y=x)')
-    plt.title('Scatter Plot: NN Predictions vs Actuals')
-    plt.xlabel('Actual Values'); plt.ylabel('Predicted Values')
-    plt.xlim(0, 1); plt.ylim(0, 1)
-    plt.grid(True); plt.legend(); plt.gca().set_aspect('equal', adjustable='box')
-    plt.savefig(results_dir / scatter_name)
-    logger.info(f"NN scatter plot saved as {scatter_name}.")
-
-    # --- NEW: Scatter Plot for Persistence Baseline ---
-    plt.figure(figsize=(8, 8))
-    valid_labels = labels_df.iloc[1:]
-    valid_preds = persistence_preds_df.iloc[1:]
-    sample_indices = np.random.choice(valid_labels.size, size=min(5000, valid_labels.size), replace=False)
-    plt.scatter(valid_labels.values.flatten()[sample_indices], valid_preds.values.flatten()[sample_indices], alpha=0.3, s=10, color='green')
-    plt.plot([0, 1], [0, 1], 'r--', label='Perfect Prediction (y=x)')
-    plt.title('Scatter Plot: Persistence Baseline vs Actuals')
-    plt.xlabel('Actual Values'); plt.ylabel('Predicted Values (Yesterday\'s Actuals)')
-    plt.xlim(0, 1); plt.ylim(0, 1)
-    plt.grid(True); plt.legend(); plt.gca().set_aspect('equal', adjustable='box')
-    plt.savefig(results_dir / 'scatter_plot_baseline.png') # Using a fixed name for this new plot
-    logger.info("Persistence baseline scatter plot saved.")
-
-
-def evaluate(config_name: str = "datapp_de", study_name: str = 'latest'):
+def evaluate(config_name: str, model_type: str, study_name: str):
     """Main evaluation function."""
-    logger.info("--- Starting Final Model Evaluation ---")
+    logger.info(f"--- Starting Final Model Evaluation for '{model_type}' ---")
     
-    # 1. SETUP
+    # 1. SETUP & DATA LOADING
     config = load_config(config_name)
     setup_name = config.get('setup_name', 'default_setup')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
-    if study_name == 'latest':
-        logger.info("Locating the latest study directory...")
-        study_dir = sorted(results_parent_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)[0]
-        study_name = study_dir.name
-    else:
-        study_dir = results_parent_dir / study_name
+    try:
+        if study_name == 'latest':
+            study_dir = get_latest_study_dir(results_parent_dir, model_type)
+            study_name = study_dir.name
+        else:
+            study_dir = results_parent_dir / study_name
+        logger.info(f"Using results from study directory: {study_name}")
+    except FileNotFoundError as e:
+        logger.error(e)
+        return
     
-    logger.info(f"Loading results from study: {study_name}")
-    
-    # 2. LOAD DATA (TEST SET)
     logger.info("Loading test set data...")
-    test_dataset = FencastDataset(config=config, mode='test')
+    test_dataset = FencastDataset(config=config, mode='test', model_type=model_type)
     batch_size = config.get('model', {}).get('batch_sizes', {}).get('evaluation', 256)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
     
-    # 3. LOAD BEST MODEL
+    # 2. LOAD BEST MODEL
     logger.info("Loading best trained model...")
-    final_model_path = PROJECT_ROOT / "model" / f"{setup_name}_best_model.pth"
+    final_model_path = study_dir / "best_model.pth"
     if not final_model_path.exists():
-        logger.error(f"Final model not found at {final_model_path}. Please run a final training run.")
-        return 
-    checkpoint = torch.load(final_model_path, map_location=device, weights_only=False)
-    model = DynamicFFNN(**checkpoint['model_args']).to(device)
+        logger.error(f"Final model not found at {final_model_path}. Please run training first.")
+        return
+    
+    checkpoint = torch.load(final_model_path, map_location=device)
+    if checkpoint.get('model_type') == 'cnn':
+        model = DynamicCNN(**checkpoint['model_args']).to(device)
+    else:
+        model = DynamicFFNN(**checkpoint['model_args']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
-    # 4. GET PREDICTIONS
+    # 3. GET PREDICTIONS
     logger.info("Generating predictions on the test set...")
-    predictions_np, labels_np = get_predictions(model, test_loader, device)
+    predictions_np, labels_np = get_predictions(model, test_loader, device, model_type)
+    
     labels_df = pd.DataFrame(labels_np, index=test_dataset.y.index, columns=test_dataset.y.columns)
     preds_df = pd.DataFrame(predictions_np, index=test_dataset.y.index, columns=test_dataset.y.columns)
     
-    # Generate persistence predictions
-    persistence_preds_df = labels_df.shift(1)
-    
-    # 5. CALCULATE METRICS
+    # 4. CALCULATE METRICS
     logger.info("Calculating performance metrics...")
     nn_rmse = np.sqrt(mean_squared_error(labels_df, preds_df))
     nn_mae = mean_absolute_error(labels_df, preds_df)
-    persistence_rmse = calculate_persistence_rmse(labels_df)
+    
+    persistence_rmse, persistence_mae = calculate_persistence_metrics(labels_df)
+    
+    climatology_preds_df = calculate_climatology_baseline(labels_df, config)
+    climatology_rmse = np.sqrt(mean_squared_error(labels_df, climatology_preds_df))
+    climatology_mae = mean_absolute_error(labels_df, climatology_preds_df)
 
-    logger.info("\n--- Performance Summary ---")
-    logger.info(f"  Persistence Model RMSE: {persistence_rmse:.6f}")
-    logger.info(f"  Neural Network RMSE:    {nn_rmse:.6f}")
-    logger.info(f"  Neural Network MAE:     {nn_mae:.6f}")
-    logger.info("---------------------------")
+    logger.info("\n" + "="*35)
+    logger.info("      PERFORMANCE SUMMARY")
+    logger.info("="*35)
+    logger.info(f"  Persistence Model:")
+    logger.info(f"    RMSE: {persistence_rmse:.6f}")
+    logger.info(f"    MAE:  {persistence_mae:.6f}")
+    logger.info(f"  Climatology Model (1990-1999 Avg):")
+    logger.info(f"    RMSE: {climatology_rmse:.6f}")
+    logger.info(f"    MAE:  {climatology_mae:.6f}")
+    logger.info(f"  {model_type.upper()} Model:")
+    logger.info(f"    RMSE: {nn_rmse:.6f}")
+    logger.info(f"    MAE:  {nn_mae:.6f}")
+    logger.info("="*35)
 
-    # 6. VISUALIZE RESULTS
+    # 5. VISUALIZE RESULTS
     logger.info("Creating visualizations...")
-    create_plots(labels_df, preds_df, persistence_preds_df, study_dir)
-
+    create_plots(labels_df, preds_df, climatology_preds_df, study_dir, model_type)
 
 if __name__ == '__main__':
-    evaluate()
+    parser = argparse.ArgumentParser(description='Evaluate a trained model on the test set.')
+    parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
+    parser.add_argument('--model-type', '-m', required=True, choices=['ffnn', 'cnn'], help='The model architecture to evaluate.')
+    parser.add_argument('--study-name', '-s', default='latest', help='Study directory to use for saving plots (default: latest for the given model-type).')
+    args = parser.parse_args()
+    evaluate(config_name=args.config, model_type=args.model_type, study_name=args.study_name)

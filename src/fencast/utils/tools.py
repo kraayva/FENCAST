@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from fencast.utils.paths import LOG_DIR
 
 def setup_logger(prefix: str = "default"):
@@ -52,3 +53,11 @@ def setup_logger(prefix: str = "default"):
     logger.info(f"Logger initialized. Log file at: {log_file_path}")
 
     return logger
+
+
+def get_latest_study_dir(results_parent_dir: Path, model_type: str) -> Path:
+    prefix = f"study_{model_type}"
+    model_studies = [d for d in results_parent_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
+    if not model_studies:
+        raise FileNotFoundError(f"No study found for model type '{model_type}' in {results_parent_dir}")
+    return sorted(model_studies, key=lambda f: f.stat().st_mtime, reverse=True)[0]
