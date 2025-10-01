@@ -17,15 +17,15 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("final_training")
 
-def run_training(config: dict, model_type: str, params: dict):
+def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
     """
-    Main function to orchestrate the final model training and validation process
-    using a given set of hyperparameters.
+    Main function to run the final model training and validation process using a given set of hyperparameters.
     
     Args:
         config (dict): The project's configuration dictionary.
         model_type (str): The model architecture to train ('ffnn' or 'cnn').
         params (dict): A dictionary containing all necessary hyperparameters for the model.
+        study_dir (Path): Directory where the study results and model checkpoints will be saved.
     """
     # 1. SETUP
     # =================================================================================
@@ -211,5 +211,6 @@ if __name__ == '__main__':
     run_training(
         config=config,
         model_type=args.model_type,
-        params=final_params
+        params=final_params,
+        study_dir=study_dir
     )

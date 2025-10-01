@@ -58,25 +58,29 @@ def get_cnn_channel_map(config: dict) -> dict:
             channel_idx += 1
     return channel_map
 
-def run_feature_importance(config_name: str, model_type: str, setup_name: str, study_name: str):
+def run_feature_importance(config_name: str, model_type: str, study_name: str):
     """Performs grouped permutation feature importance analysis for a given model type."""
     logger.info(f"--- Starting Feature Importance Analysis for '{model_type}' model ---")
-    # =====================================
-    # 1. SETUP & LOAD DATA/MODEL
-    # =====================================
+    
+    # ===============================
+    # 1. SETUP & LOAD MODEL/DATA
+    # ===============================
     config = load_config(config_name)
     setup_name = config.get('setup_name', 'default_setup')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
+    try:
+        if study_name == 'latest':
+            study_dir = get_latest_study_dir(results_parent_dir, model_type)
+        else:
+            study_dir = results_parent_dir / study_name
+        logger.info(f"Using results from study directory: {study_dir.name}")
+    except FileNotFoundError as e:
+        logger.error(e)
+        return
 
-    if study_name == 'latest':
-        study_dir = get_latest_study_dir(PROJECT_ROOT / "results", model_type)
-        logger.info("Loading best trained model...")
-    else:
-        study_dir = PROJECT_ROOT / "results" / study_name
-        if not study_dir.exists():
-            raise FileNotFoundError(f"Study directory '{study_dir}' does not exist.")
-        logger.info(f"Loading best trained model from specified study '{study_name}'...")
-        
+    logger.info("Loading best trained model...")
     final_model_path = study_dir / "best_model.pth"
     if not final_model_path.exists():
         raise FileNotFoundError(f"Model file not found at {final_model_path}")
@@ -201,7 +205,7 @@ def run_feature_importance(config_name: str, model_type: str, setup_name: str, s
         plt.title(f"Permutation Feature Importance {group_type} for {model_type.upper()} Model")
         plt.gca().invert_yaxis()
         plt.tight_layout()
-        save_path = PROJECT_ROOT / "results" / setup_name / f"feature_importance_{model_type}_{group_type.replace(' ', '_').lower()}.png"
+        save_path = study_dir / f"feature_importance_{model_type}_{group_type.replace(' ', '_').lower()}.png"
         plt.savefig(save_path)
         plt.close()
         logger.info(f"Saved {group_type} importance plot to {save_path}")
@@ -210,6 +214,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run permutation feature importance analysis.')
     parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
     parser.add_argument('--model-type', '-m', required=True, choices=['ffnn', 'cnn'], help='The model architecture to analyze.')
-    parser.add_argument('--study', '-s', default='latest', help='The study name to use for loading results.')
+    parser.add_argument('--study-name', '-s', default='latest', help='The study name to use for loading results.')
     args = parser.parse_args()
-    run_feature_importance(config_name=args.config, model_type=args.model_type, setup_name=args.setup, study_name=args.study_name)
+    
+    run_feature_importance(
+        config_name=args.config, 
+        model_type=args.model_type, 
+        study_name=args.study_name
+    )
