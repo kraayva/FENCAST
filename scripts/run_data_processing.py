@@ -26,14 +26,12 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool):
         
         # 2. Process the data based on the model target
         logger.info(f"Starting data processing for target: '{model_target}'...")
-        # This function must now accept 'model_target' and return the correct data format
         X_processed, y_processed = load_and_prepare_data(config=config, model_target=model_target)
         
         # 3. Define paths and save the results
         setup_name = config.get('setup_name', 'default_setup')
         PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Use different file extensions based on the target
         if model_target == 'ffnn':
             features_path = PROCESSED_DATA_DIR / f"{setup_name}_features_ffnn.parquet"
             labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
@@ -42,7 +40,6 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool):
             labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet" # Labels are likely still 2D
 
         # Check for existing files and prompt for overwrite if necessary
-        # (This logic remains largely the same)
         should_save = True
         if features_path.exists() and not force_save:
             logger.warning(f"Processed file already exists: {features_path}")

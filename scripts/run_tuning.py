@@ -77,8 +77,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
             out_channels.append(n_filters)
         params['out_channels'] = out_channels
         
-        # NOTE: You could also tune the final dense layers here if desired
-        # params['dense_layers'] = ...
 
     params['activation_name'] = trial.suggest_categorical("activation", tuning_config.get('activations', ["ReLU", "ELU"]))
     logger.info(f"Trial {trial.number} Parameters: {json.dumps(params, indent=4)}")
@@ -182,7 +180,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
 
 if __name__ == '__main__':
-    # ... (The main execution block is correct and does not need changes) ...
     parser = argparse.ArgumentParser(description="Run hyperparameter tuning for a given model architecture.")
     parser.add_argument(
         '--model-type', '-m',

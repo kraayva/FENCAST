@@ -19,7 +19,6 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 logger = setup_logger("evaluation")
 
 def get_predictions(model, data_loader, device, model_type: str):
-    # ... (This function is correct and requires no changes) ...
     """Runs the model on the test set and returns predictions and labels."""
     model.eval()
     all_predictions, all_labels = [], []
@@ -67,12 +66,10 @@ def calculate_climatology_baseline(labels_df: pd.DataFrame, config: dict) -> pd.
     historical_data = full_df.loc['1990':'1999']
     
     # 3. Calculate the mean value for each day of the year (1-366)
-    # Grouping by month and day handles leap years correctly.
     daily_climatology = historical_data.groupby([historical_data.index.month, historical_data.index.day]).mean()
     daily_climatology.index.names = ['month', 'day']
     
     # 4. Create predictions for the test set dates
-    # Create month and day columns in a temporary df to map the averages
     preds_df = pd.DataFrame(index=labels_df.index)
     preds_df['month'] = preds_df.index.month
     preds_df['day'] = preds_df.index.day

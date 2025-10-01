@@ -20,7 +20,6 @@ class FencastDataset(Dataset):
     """
     def __init__(self, config: dict, mode: str, model_type: str, apply_normalization: bool = True):
         super().__init__()
-        # ... (initial checks remain the same) ...
         if mode not in ['train', 'validation', 'test']:
             raise ValueError("Mode must be 'train', 'validation', or 'test'")
         if model_type not in ['ffnn', 'cnn']:
@@ -42,7 +41,6 @@ class FencastDataset(Dataset):
             self._normalize_features()
 
     def _load_data(self):
-        # ... (this method is unchanged from our last version) ...
         """Loads features and labels based on the model_type."""
         print(f"[{self.mode}] Loading data for '{self.model_type}' model...")
         
@@ -61,11 +59,10 @@ class FencastDataset(Dataset):
                 raise FileNotFoundError(f"CNN data not found for setup '{self.setup_name}'. Run data processing with --model-target cnn.")
             
             with np.load(features_path) as data:
-                self.X = data['features'] # This is only the spatial data
+                self.X = data['features']
             self.y = pd.read_parquet(labels_path)
 
     def _split_data(self):
-        # ... (this method is unchanged from our last version) ...
         """
         Filters the data based on years. This logic is driven by the label's
         time index, which works for both NumPy arrays and DataFrames.
@@ -103,7 +100,6 @@ class FencastDataset(Dataset):
         }, index=self.y.index)
 
     def _normalize_features(self):
-        # ... (this method is unchanged from our last version) ...
         """Applies normalization based on the model type."""
         if self.model_type == 'ffnn':
             self._normalize_ffnn()
@@ -111,7 +107,6 @@ class FencastDataset(Dataset):
             self._normalize_cnn()
 
     def _normalize_ffnn(self):
-        # ... (this method is unchanged from our last version) ...
         """Fits/loads a StandardScaler for 2D tabular data."""
         scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_ffnn_scaler.gz"
         exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', [])
@@ -132,7 +127,6 @@ class FencastDataset(Dataset):
             self.X[normalize_columns] = scaler.transform(self.X[normalize_columns])
 
     def _normalize_cnn(self):
-        # ... (this method is unchanged from our last version) ...
         """Calculates/loads per-channel mean/std for 4D image-like data."""
         scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_cnn_scaler.npz"
         

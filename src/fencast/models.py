@@ -52,7 +52,7 @@ class DynamicCNN(nn.Module):
         
         lat_min, lat_max = self.config['feature_region']['lat_min'], self.config['feature_region']['lat_max']
         lon_min, lon_max = self.config['feature_region']['lon_min'], self.config['feature_region']['lon_max']
-        resolution = 0.25 # ERA5 resolution
+        resolution = 0.25
         input_height = int((lat_max - lat_min) / resolution) + 1
         input_width = int((lon_max - lon_min) / resolution) + 1
         

@@ -12,7 +12,7 @@ from pathlib import Path
 # Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
-from fencast.models import DynamicFFNN, DynamicCNN # Import both models
+from fencast.models import DynamicFFNN, DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("final_training")
@@ -74,9 +74,9 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
-        mode='min',      # We want to minimize the validation loss
-        factor=0.2,      # Reduce LR by a factor of 0.2 (e.g., 0.001 -> 0.0002)
-        patience=3,      # Wait 3 epochs with no improvement before reducing LR
+        mode='min',
+        factor=0.2,      # Reduce LR by a factor of 0.2
+        patience=3,      # 3 epochs with no improvement before reducing LR
     )
 
     # 4. TRAINING LOOP

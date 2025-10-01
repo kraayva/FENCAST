@@ -49,11 +49,9 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         print(f"Dropped columns from CF data: {drop_cols}")
 
     # --- 3. Align data by finding common timestamps ---
-    # Ensure both datasets have consistent timezone handling
     weather_index = weather_data.time.to_index()
     cf_index = df_cf.index
     
-    # Make both timezone-naive for comparison
     if weather_index.tz is not None:
         weather_index = weather_index.tz_localize(None)
     if cf_index.tz is not None:
@@ -68,7 +66,7 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         # Try to resample or find nearest matches
         # This handles cases where weather data is hourly and CF data is daily
         
-        # First, let's try to see if we can align by date only (ignoring time)
+        # First align by date only
         weather_dates = weather_index.normalize()  # Remove time component
         cf_dates = cf_index.normalize()
         
@@ -82,10 +80,8 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
             common_index = matching_weather_times.intersection(matching_cf_times)
             
             if len(common_index) == 0:
-                # If still no match, try a different approach - use weather data and interpolate CF data
                 print("Still no matches - will use weather timestamps and interpolate CF data")
                 common_index = matching_weather_times
-                # Reindex CF data to match weather timestamps (with interpolation)
                 df_cf = df_cf.reindex(common_index, method='nearest', tolerance=pd.Timedelta('12 hours'))
             
         else:

@@ -6,11 +6,13 @@ A machine learning project to predict solar power capacity factors (CF) for Germ
 
 ## About The Project
 
-FENCAST investigates the capability of machine learning models to forecast energy generation values from meteorological data. This initial version implements a complete pipeline to:
+FENCAST investigates the capability of MLWP's output to be used to predict energy generation values. This initial version implements a complete pipeline to:
 1.  Process gridded, multi-level ERA5 weather data (temperature, wind, etc.).
-2.  Train different machine learning architectures (simple FFNN, CNN) to predict solar capacity factors from the Copernicus Climate Change Service (C3S).
+2.  Train different machine learning architectures to predict solar capacity factors from the Copernicus Climate Change Service (C3S).
 3.  Systematically tune the model's hyperparameters using Optuna.
 4.  Evaluate the final model against a persistence baseline and analyze feature importance.
+
+After identifying an appropriate model, it will be used to calculate energy generation data from the output of several MLWP models.
 
 ---
 ## Getting Started
@@ -19,7 +21,7 @@ Follow these steps to set up your local development environment.
 
 1.  **Clone the repository**
     ```bash
-    git clone [https://github.com/your-username/FENCAST.git](https://github.com/your-username/FENCAST.git)
+    git clone [https://github.com/kraayva/FENCAST.git](https://github.com/kraayva/FENCAST.git)
     cd FENCAST
     ```
 
@@ -117,11 +119,10 @@ FENCAST/
 ├── data/
 │   ├── raw/
 │   └── processed/
-├── model/
-│   └── *setup name*.pth
 ├── results/
 │   └── *setup name*/
-│       └── *study_date*/
+│       └── *study_name*/
+|           ├── best_model.pth
 │           ├── *study_date.db*
 │           └── *.html, *.png
 ├── scripts/
