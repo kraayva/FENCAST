@@ -14,7 +14,7 @@ from pathlib import Path
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicFFNN, DynamicCNN
-from fencast.utils.tools import setup_logger
+from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("evaluation")
 
@@ -111,14 +111,6 @@ def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir, mode
     logger.info(f"Time-series plot saved to {results_dir}.")
     plt.close()
 
-def get_latest_study_dir(results_parent_dir: Path, model_type: str) -> Path:
-    logger.info(f"Searching for latest study for model type '{model_type}'...")
-    prefix = f"study_{model_type}"
-    model_studies = [d for d in results_parent_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
-    if not model_studies:
-        raise FileNotFoundError(f"No study found for model type '{model_type}' in {results_parent_dir}")
-    return sorted(model_studies, key=lambda f: f.stat().st_mtime, reverse=True)[0]
-
 def evaluate(config_name: str, model_type: str, study_name: str):
     """Main evaluation function."""
     logger.info(f"--- Starting Final Model Evaluation for '{model_type}' ---")
@@ -147,7 +139,7 @@ def evaluate(config_name: str, model_type: str, study_name: str):
     
     # 2. LOAD BEST MODEL
     logger.info("Loading best trained model...")
-    final_model_path = PROJECT_ROOT / "model" / f"{setup_name}_{model_type}_best_model.pth"
+    final_model_path = study_dir / "best_model.pth"
     if not final_model_path.exists():
         logger.error(f"Final model not found at {final_model_path}. Please run training first.")
         return

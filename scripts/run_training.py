@@ -13,7 +13,7 @@ from pathlib import Path
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicFFNN, DynamicCNN # Import both models
-from fencast.utils.tools import setup_logger
+from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("final_training")
 
@@ -86,8 +86,7 @@ def run_training(config: dict, model_type: str, params: dict):
     best_validation_loss = float('inf')
     
     # Make model save path unique to the model type
-    setup_name = config.get('setup_name', 'default_setup')
-    model_save_path = PROJECT_ROOT / "model" / f"{setup_name}_{model_type}_best_model.pth"
+    model_save_path = study_dir / "best_model.pth"
     model_save_path.parent.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(epochs):
@@ -151,23 +150,6 @@ def run_training(config: dict, model_type: str, params: dict):
     logger.info(f"Best model validation loss: {best_validation_loss:.6f}")
     logger.info(f"Model saved to: {model_save_path}")
 
-
-def get_latest_study_dir(results_parent_dir: Path, model_type: str) -> Path:
-    """Finds the most recent study directory for a given model type."""
-    logger.info(f"Searching for latest study for model type '{model_type}' in {results_parent_dir}...")
-    
-    # Filter directories that match the study prefix for the model type
-    prefix = f"study_{model_type}"
-    model_studies = [d for d in results_parent_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
-    
-    if not model_studies:
-        raise FileNotFoundError(f"No study found for model type '{model_type}' in {results_parent_dir}")
-        
-    # Sort by modification time and return the latest one
-    latest_study_dir = sorted(model_studies, key=lambda f: f.stat().st_mtime, reverse=True)[0]
-    return latest_study_dir
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run final model training with best hyperparameters from a study.')
     parser.add_argument(
@@ -196,6 +178,7 @@ if __name__ == '__main__':
     try:
         if args.study_name == 'latest':
             study_dir = get_latest_study_dir(results_parent_dir, args.model_type)
+            logger.info("Loading best trained model...")
         else:
             study_dir = results_parent_dir / args.study_name
 

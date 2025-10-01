@@ -85,7 +85,7 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     output_size = config['target_size']
     batch_size = config.get('model', {}).get('batch_sizes', {}).get('tuning', 64)
-    epochs = tuning_config.get('epochs', 25)
+    epochs = tuning_config.get('epochs', 30)
 
     # 2. DATA LOADING
     # ============================================================================
