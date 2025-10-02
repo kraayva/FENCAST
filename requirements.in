@@ -24,3 +24,4 @@ optuna
 plotly
 pip-tools
 optuna-dashboard
+seaborn

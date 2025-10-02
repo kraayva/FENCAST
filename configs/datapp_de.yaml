@@ -15,7 +15,7 @@ target_size: 37
 
 # Feature data settings
 input_size_flat: 20297
-input_channels: 1 # Example for CNN: 1 for grayscale/single-variable heatmaps
+input_channels: 1 
 era5_data_raw:
   u_component_of_wind: 'data/raw/era5_de_u_component_of_wind.nc'
   v_component_of_wind: 'data/raw/era5_de_v_component_of_wind.nc'

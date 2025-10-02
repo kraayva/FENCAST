@@ -1,5 +1,3 @@
-# scripts/feature_importance.py
-
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
@@ -8,7 +6,9 @@ from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import torch.nn as nn
 import argparse
+import seaborn as sns
 import joblib
+from pathlib import Path
 
 # Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
@@ -25,15 +25,9 @@ def calculate_rmse(model, data_loader, device, model_type: str):
     with torch.no_grad():
         for batch in data_loader:
             if model_type == 'cnn':
-                # For CNN, unpack three tensors (or two if temporal is missing)
-                if len(batch) == 3:
-                    spatial_features, temporal_features, labels = batch
-                    spatial_features, temporal_features = spatial_features.to(device), temporal_features.to(device)
-                    outputs = model(spatial_features, temporal_features)
-                else: # Fallback for TensorDataset without temporal
-                    spatial_features, labels = batch
-                    raise ValueError("CNN evaluation requires temporal features which are missing from the DataLoader.")
-
+                spatial_features, temporal_features, labels = batch
+                spatial_features, temporal_features = spatial_features.to(device), temporal_features.to(device)
+                outputs = model(spatial_features, temporal_features)
             else: # FFNN
                 features, labels = batch
                 features = features.to(device)
@@ -62,9 +56,7 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
     """Performs grouped permutation feature importance analysis for a given model type."""
     logger.info(f"--- Starting Feature Importance Analysis for '{model_type}' model ---")
     
-    # ===============================
     # 1. SETUP & LOAD MODEL/DATA
-    # ===============================
     config = load_config(config_name)
     setup_name = config.get('setup_name', 'default_setup')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -96,14 +88,10 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
     logger.info(f"Loading test set data for '{model_type}' (un-normalized)...")
     dataset_obj = FencastDataset(config=config, mode='test', model_type=model_type, apply_normalization=False)
     X_processed, y_processed = dataset_obj.X, dataset_obj.y
-
-    # =============================================
-    # 2. PERMUTATION IMPORTANCE CALCULATION
-    # =============================================
-
+    
+    # 2. CALCULATE GROUPED IMPORTANCE FOR BAR CHARTS
     all_importances = {}
-
-    # --- 2.a FFNN MODEL ---
+    
     if model_type == 'ffnn':
         scaler_path = PROCESSED_DATA_DIR / f"{setup_name}_ffnn_scaler.gz"
         scaler = joblib.load(scaler_path)
@@ -111,20 +99,31 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
         
         temp_dataset = torch.utils.data.TensorDataset(torch.tensor(X_scaled, dtype=torch.float32), torch.tensor(y_processed.values, dtype=torch.float32))
         temp_loader = DataLoader(temp_dataset, batch_size=256)
-        baseline_rmse = calculate_rmse(model, temp_loader, device, model_type='ffnn') # Pass model_type
+        baseline_rmse = calculate_rmse(model, temp_loader, device, model_type='ffnn')
         logger.info(f"Baseline RMSE on test set: {baseline_rmse:.6f}")
         
         var_names = list(config['era5_var_names'].values())
         var_groups = {var: [col for col in X_processed.columns if col.startswith(f'{var}_')] for var in var_names}
+        # Combine u and v into a single 'Wind' group
+        var_groups['Wind'] = var_groups['u'] + var_groups['v']
+        del var_groups['u']
+        del var_groups['v']
+        var_groups['Temporal Features'] = ['day_of_year_sin', 'day_of_year_cos'] # Add temporal to var_groups
+
         levels = sorted(list(set([col.split('_')[1] for col in X_processed.columns if col.count('_') > 1])))
         level_groups = {f'{level} hPa': [col for col in X_processed.columns if f'_{level}_' in col] for level in levels}
-        feature_groups_to_test = {"By Variable": var_groups, "By Level": level_groups}
+
+        feature_groups_to_test = {
+            "By Variable": var_groups, 
+            "By Level": level_groups
+        }
 
         for group_type, feature_groups in feature_groups_to_test.items():
             logger.info(f"\n--- Calculating Importance {group_type} ---")
             importances = {}
             for group_name, columns in feature_groups.items():
                 if not columns: continue
+                
                 X_permuted = X_processed.copy()
                 perm_indices = np.random.permutation(X_permuted.index)
                 X_permuted[columns] = X_permuted.loc[perm_indices, columns].values
@@ -133,23 +132,20 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
                 permuted_dataset = torch.utils.data.TensorDataset(torch.tensor(X_permuted_scaled, dtype=torch.float32), torch.tensor(y_processed.values, dtype=torch.float32))
                 permuted_loader = DataLoader(permuted_dataset, batch_size=256)
                 
-                permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type='ffnn') # Pass model_type
+                permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type='ffnn')
                 importance = permuted_rmse - baseline_rmse
                 importances[group_name] = importance
                 logger.info(f"  Importance of '{group_name}': {importance:.6f}")
             all_importances[group_type] = importances
 
-    # --- 2.b CNN MODEL ---
     elif model_type == 'cnn':
         scaler_path = PROCESSED_DATA_DIR / f"{setup_name}_cnn_scaler.npz"
         with np.load(scaler_path) as data:
             mean, std = data['mean'], data['std']
         X_scaled = (X_processed - mean) / std
         
-        # get the temporal features from the dataset object
         temporal_features = dataset_obj.temporal_features
 
-        # Baseline: Create TensorDataset with required inputs
         temp_dataset = torch.utils.data.TensorDataset(
             torch.tensor(X_scaled, dtype=torch.float32), 
             torch.tensor(temporal_features.values, dtype=torch.float32),
@@ -158,41 +154,135 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
         temp_loader = DataLoader(temp_dataset, batch_size=256)
         baseline_rmse = calculate_rmse(model, temp_loader, device, model_type='cnn')
         logger.info(f"Baseline RMSE on test set: {baseline_rmse:.6f}")
-
+        
         channel_map = get_cnn_channel_map(config)
         var_groups = {var: [idx for idx, info in channel_map.items() if info['var'] == var] for var in config['era5_var_names'].values()}
+        # Combine u and v into a single 'Wind' group
+        var_groups['Wind'] = var_groups['u'] + var_groups['v']
+        del var_groups['u']
+        del var_groups['v']
+        var_groups['Temporal Features'] = ['day_of_year_sin', 'day_of_year_cos'] # Add temporal to var_groups
+
         level_groups = {f"{level} hPa": [idx for idx, info in channel_map.items() if info['level'] == level] for level in config['feature_level']}
-        feature_groups_to_test = {"By Variable": var_groups, "By Level": level_groups}
+
+        feature_groups_to_test = {
+            "By Variable": var_groups, 
+            "By Level": level_groups
+        }
 
         for group_type, feature_groups in feature_groups_to_test.items():
             logger.info(f"\n--- Calculating Importance {group_type} ---")
             importances = {}
-            for group_name, channel_indices in feature_groups.items():
-                if not channel_indices: continue
+            for group_name, columns_or_indices in feature_groups.items():
+                if not columns_or_indices: continue
                 
-                X_permuted = X_processed.copy()
-                n_samples = X_permuted.shape[0]
-                perm_indices = np.random.permutation(n_samples)
-                X_permuted[:, channel_indices, :, :] = X_permuted[perm_indices][:, channel_indices, :, :]
-                X_permuted_scaled = (X_permuted - mean) / std
+                permuted_dataset = None
                 
-                # Create permuted dataset with required inputs
-                permuted_dataset = torch.utils.data.TensorDataset(
-                    torch.tensor(X_permuted_scaled, dtype=torch.float32), 
-                    torch.tensor(temporal_features.values, dtype=torch.float32),
-                    torch.tensor(y_processed.values, dtype=torch.float32)
-                )
+                if group_name == 'Temporal Features':
+                    permuted_temporal = temporal_features.sample(frac=1).values
+                    permuted_dataset = torch.utils.data.TensorDataset(
+                        torch.tensor(X_scaled, dtype=torch.float32), 
+                        torch.tensor(permuted_temporal, dtype=torch.float32),
+                        torch.tensor(y_processed.values, dtype=torch.float32)
+                    )
+                else: 
+                    channel_indices = columns_or_indices
+                    X_permuted = X_processed.copy()
+                    n_samples = X_permuted.shape[0]
+                    perm_indices = np.random.permutation(n_samples)
+                    X_permuted[:, channel_indices, :, :] = X_permuted[perm_indices][:, channel_indices, :, :]
+                    X_permuted_scaled = (X_permuted - mean) / std
+                    
+                    permuted_dataset = torch.utils.data.TensorDataset(
+                        torch.tensor(X_permuted_scaled, dtype=torch.float32), 
+                        torch.tensor(temporal_features.values, dtype=torch.float32),
+                        torch.tensor(y_processed.values, dtype=torch.float32)
+                    )
+                
                 permuted_loader = DataLoader(permuted_dataset, batch_size=256)
-
                 permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type='cnn')
                 importance = permuted_rmse - baseline_rmse
                 importances[group_name] = importance
                 logger.info(f"  Importance of '{group_name}': {importance:.6f}")
             all_importances[group_type] = importances
+    # --- [NEW] SECTION 3: HEATMAP CALCULATION ---
+    # =================================================================================
+    logger.info("\n--- Calculating Importance for Heatmap ---")
+    
+    physical_vars = {k: v for k, v in config['era5_var_names'].items() if v not in ['u', 'v']}
+    physical_vars['Wind'] = ['u', 'v'] # Group u and v as 'Wind'
+    levels = config['feature_level']
+    
+    # Prepare a DataFrame to store heatmap scores
+    heatmap_df = pd.DataFrame(index=levels, columns=list(physical_vars.keys()))
 
-    # ===============================
-    # 3. VISUALIZE RESULTS
-    # ===============================
+    for var_name, var_codes in physical_vars.items():
+        for level in levels:
+            group_name = f"{var_name} at {level} hPa"
+            
+            if model_type == 'ffnn':
+                # Find all columns corresponding to this var/level combo
+                columns_to_permute = [
+                    col for col in X_processed.columns 
+                    if any(f'{code}_{level}' in col for code in var_codes)
+                ]
+                if not columns_to_permute: continue
+                
+                X_permuted = X_processed.copy()
+                perm_indices = np.random.permutation(X_permuted.index)
+                X_permuted[columns_to_permute] = X_permuted.loc[perm_indices, columns_to_permute].values
+                X_permuted_scaled = scaler.transform(X_permuted)
+                
+                permuted_dataset = torch.utils.data.TensorDataset(torch.tensor(X_permuted_scaled, dtype=torch.float32), torch.tensor(y_processed.values, dtype=torch.float32))
+
+            elif model_type == 'cnn':
+                # Find all channel indices for this var/level combo
+                channels_to_permute = [
+                    idx for idx, info in channel_map.items()
+                    if info['var'] in var_codes and info['level'] == level
+                ]
+                if not channels_to_permute: continue
+
+                X_permuted = X_processed.copy()
+                n_samples = X_permuted.shape[0]
+                perm_indices = np.random.permutation(n_samples)
+                X_permuted[:, channels_to_permute, :, :] = X_permuted[perm_indices][:, channels_to_permute, :, :]
+                X_permuted_scaled = (X_permuted - mean) / std
+
+                permuted_dataset = torch.utils.data.TensorDataset(
+                    torch.tensor(X_permuted_scaled, dtype=torch.float32), 
+                    torch.tensor(temporal_features.values, dtype=torch.float32),
+                    torch.tensor(y_processed.values, dtype=torch.float32)
+                )
+
+            permuted_loader = DataLoader(permuted_dataset, batch_size=256)
+            permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type)
+            importance = permuted_rmse - baseline_rmse
+            heatmap_df.loc[level, var_name] = importance
+            logger.info(f"  Importance of '{group_name}': {importance:.6f}")
+
+    # ---  SECTION 4: VISUALIZE RESULTS ---
+    # =================================================================================
+    
+    # ---  Heatmap Visualization ---
+    plt.figure(figsize=(12, 7))
+    sns.heatmap(
+        heatmap_df.astype(float), 
+        annot=True,          # Write the data value in each cell
+        fmt=".4f",           # Format numbers to 4 decimal places
+        cmap="viridis",      # Color scheme
+        linewidths=.5
+    )
+    plt.title(f"Feature Importance Heatmap for {model_type.upper()} Model")
+    plt.ylabel("Pressure Level (hPa)")
+    plt.xlabel("Physical Variable")
+    plt.tight_layout()
+    save_path = study_dir / f"feature_importance_{model_type}_heatmap.png"
+    plt.savefig(save_path)
+    plt.close()
+    logger.info(f"Saved heatmap plot to {save_path}")
+
+    # --- Bar Chart Visualizations ---
     for group_type, importances in all_importances.items():
         if not importances: continue
         sorted_importances = sorted(importances.items(), key=lambda item: item[1], reverse=True)

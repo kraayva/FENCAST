@@ -270,7 +270,9 @@ markupsafe==3.0.2
     #   mako
     #   nbconvert
 matplotlib==3.10.6
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   seaborn
 matplotlib-inline==0.1.7
     # via
     #   ipykernel
@@ -325,6 +327,7 @@ numpy==2.3.2
     #   pandas
     #   scikit-learn
     #   scipy
+    #   seaborn
     #   torchvision
     #   xarray
     #   zarr
@@ -358,6 +361,7 @@ packaging==25.0
 pandas==2.3.2
     # via
     #   fastparquet
+    #   seaborn
     #   xarray
 pandocfilters==1.5.1
     # via nbconvert
@@ -497,6 +501,8 @@ scikit-learn==1.7.2
     #   optuna-dashboard
 scipy==1.16.1
     # via scikit-learn
+seaborn==0.13.2
+    # via -r requirements.in
 send2trash==1.8.3
     # via jupyter-server
 six==1.17.0
