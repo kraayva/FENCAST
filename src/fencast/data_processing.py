@@ -135,7 +135,7 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         da_weather = weather_data[var_names].to_array(dim='variable')
         
         # Transpose to get a standard (samples, channels, height, width) format
-        # Here, we treat 'variable' and 'level' as channel dimensions
+        # Treat 'variable' and 'level' as channel dimensions
         # Shape: (time, variable, level, latitude, longitude)
         da_weather = da_weather.transpose('time', 'variable', 'level', 'latitude', 'longitude')
 

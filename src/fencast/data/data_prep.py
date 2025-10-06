@@ -62,9 +62,31 @@ era5_datasets = {var: new_ds_era5[var] for var in new_ds_era5.data_vars}
 print(era5_datasets)
 #%% download the datasets
 for var, ds in era5_datasets.items():
-    output_path = cfg["data_processed_dir"] + f"/era5_de_{var}.nc"
+    output_path = cfg["data_raw_dir"] + f"/era5_de_{var}.nc"
     ds.to_netcdf(output_path)
 
 #%%
-#output_path = cfg["data_processed_dir"] + "/era5_de.nc"
-#new_ds_era5.to_netcdf(output_path)
+# ---------------------------------------
+# ------------- PANGU DATA --------------
+# ---------------------------------------
+
+# load PANGU data
+ds_pangu = xr.open_zarr(cfg["gsWB2_pangu_data"])
+
+# cut out region
+new_ds_pangu = (
+    ds_pangu
+    .sel(latitude=slice(cfm["feature_region"]["lat_max"], cfm["feature_region"]["lat_min"]),
+         longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+    [cfm["feature_variables"].keys()]
+    .sel(level=cfm["feature_level"])
+    .sel(time=ds_pangu['time'].dt.hour == 12)
+)
+
+#%% create dataset dictionary
+pangu_datasets = {var: new_ds_pangu[var] for var in new_ds_pangu.data_vars}
+print(pangu_datasets)
+#%% download the datasets
+for var, ds in pangu_datasets.items():
+    output_path = cfg["data_raw_dir"] + f"/pangu_de_{var}.nc"
+    ds.to_netcdf(output_path)

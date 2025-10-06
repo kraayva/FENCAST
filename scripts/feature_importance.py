@@ -89,7 +89,8 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
     dataset_obj = FencastDataset(config=config, mode='test', model_type=model_type, apply_normalization=False)
     X_processed, y_processed = dataset_obj.X, dataset_obj.y
     
-    # 2. CALCULATE GROUPED IMPORTANCE FOR BAR CHARTS
+    # --- SECTION: 2. CALCULATE GROUPED IMPORTANCE FOR BAR CHARTS
+    # =================================================================================
     all_importances = {}
     
     if model_type == 'ffnn':
@@ -205,7 +206,7 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
                 importances[group_name] = importance
                 logger.info(f"  Importance of '{group_name}': {importance:.6f}")
             all_importances[group_type] = importances
-    # --- [NEW] SECTION 3: HEATMAP CALCULATION ---
+    # --- SECTION 3: HEATMAP CALCULATION ---
     # =================================================================================
     logger.info("\n--- Calculating Importance for Heatmap ---")
     

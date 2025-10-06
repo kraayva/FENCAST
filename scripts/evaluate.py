@@ -10,7 +10,6 @@ import torch.nn as nn
 import argparse
 from pathlib import Path
 
-# Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicFFNN, DynamicCNN
@@ -28,7 +27,7 @@ def get_predictions(model, data_loader, device, model_type: str):
                 spatial_features, temporal_features, labels = batch
                 spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
                 outputs = model(spatial_features, temporal_features)
-            else: # FFNN
+            elif model_type == 'ffnn':
                 features, labels = batch
                 features, labels = features.to(device), labels.to(device)
                 outputs = model(features)
