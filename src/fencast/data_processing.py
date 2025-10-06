@@ -11,42 +11,52 @@ import xarray as xr
 import numpy as np
 from pathlib import Path
 from typing import Tuple, Union
+from fencast.utils.paths import PROJECT_ROOT, DATA_DIR, RAW_DATA_DIR
+from fencast.utils.tools import setup_logger
 
-def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.DataFrame, np.ndarray], pd.DataFrame]:
+logger = setup_logger("data_processing")
+
+def load_and_prepare_data(
+    config: dict,
+    model_target: str,
+    feature_prefix: str = "era5_de"
+) -> Tuple[Union[pd.DataFrame, np.ndarray], pd.DataFrame]:
     """
-    Loads ERA5 and CF data, aligns them in time, and processes them into a format
+    Loads weather and CF data, aligns them in time, and processes them into a format
     suitable for the specified model target.
 
     Args:
         config (dict): The project's configuration dictionary.
         model_target (str): The target model architecture, either 'ffnn' or 'cnn'.
                             Determines the output shape of the feature data.
+        feature_prefix (str, optional): Prefix for feature data files. Default is "era5_de".
 
     Returns:
         A tuple containing:
         - X (pd.DataFrame or np.ndarray): The processed feature data.
         - y (pd.DataFrame): The processed label data.
     """
-    print(f"Starting data preparation for model target: '{model_target}'...")
+    logger.info(f"Starting data preparation for model target: '{model_target}'...")
 
     # --- 1. Load and combine the weather data (Input Features) ---
-    era5_files = list(config['era5_data_raw'].values())
-    print(f"Loading {len(era5_files)} ERA5 files specified in config...")
-    datasets = [xr.open_dataset(f) for f in era5_files]
+    feature_var_names = config['feature_var_names']
+    feature_files = [RAW_DATA_DIR / f'{feature_prefix}_{var}.nc' for var in feature_var_names.keys()]
+    logger.info(f"Loading {len(feature_files)} feature files")
+    datasets = [xr.open_dataset(f) for f in feature_files]
     weather_data = xr.merge(datasets, compat='override', join='inner')
-    weather_data = weather_data.rename(config['era5_var_names'])
-    print("Weather data successfully loaded and merged.")
+    weather_data = weather_data.rename(config['feature_var_names'])
+    logger.info("Weather data successfully loaded and merged.")
 
     # --- 2. Load the target data (Output Labels) ---
     cf_file = Path(config['target_data_raw'])
     df_cf = pd.read_csv(cf_file, index_col='Date', parse_dates=True)
-    print("Capacity factor (CF) data loaded.")
+    logger.info("Capacity factor (CF) data loaded.")
 
     # Drop columns from target data as specified in config
     drop_cols = config.get('data_processing', {}).get('drop_columns', [])
     if drop_cols:
         df_cf = df_cf.drop(columns=drop_cols, errors='ignore')
-        print(f"Dropped columns from CF data: {drop_cols}")
+        logger.info(f"Dropped columns from CF data: {drop_cols}")
 
     # --- 3. Align data by finding common timestamps ---
     weather_index = weather_data.time.to_index()
@@ -60,8 +70,8 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
     # Find common timestamps
     common_index = weather_index.intersection(cf_index)
     if len(common_index) == 0:
-        print("WARNING: No exact timestamp matches found!")
-        print("Attempting to find the closest matching timestamps...")
+        logger.warning("No exact timestamp matches found!")
+        logger.info("Attempting to find the closest matching timestamps...")
         
         # Try to resample or find nearest matches
         # This handles cases where weather data is hourly and CF data is daily
@@ -80,11 +90,12 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
             common_index = matching_weather_times.intersection(matching_cf_times)
             
             if len(common_index) == 0:
-                print("Still no matches - will use weather timestamps and interpolate CF data")
+                logger.info("Still no matches - will use weather timestamps and interpolate CF data")
                 common_index = matching_weather_times
                 df_cf = df_cf.reindex(common_index, method='nearest', tolerance=pd.Timedelta('12 hours'))
             
         else:
+            logger.error("No overlapping dates between weather and CF data.")
             raise ValueError("No overlapping dates between weather and CF data")
     
     # Filter both datasets to the common, aligned timestamps
@@ -96,12 +107,12 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
     end_date = config['time_end']
     weather_data = weather_data.sel(time=slice(start_date, end_date))
     df_cf = df_cf.loc[start_date:end_date]
-    print(f"Data aligned and filtered to range {start_date} - {end_date}.")
+    logger.info(f"Data aligned and filtered to range {start_date} - {end_date}.")
 
     # --- 4. Process data based on the model target ---
     if model_target == 'ffnn':
         # --- FFNN Path: Flatten data into a 2D DataFrame ---
-        print("Processing for FFNN: Flattening spatial and level dimensions...")
+        logger.info("Processing for FFNN: Flattening spatial and level dimensions...")
         
         # Convert to DataFrame and unstack spatial/level dimensions into columns
         df_weather = weather_data.to_dataframe()
@@ -109,7 +120,7 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         df_weather_flat.columns = ['_'.join(map(str, col)) for col in df_weather_flat.columns]
         
         # Add cyclical temporal features
-        print("Adding cyclical temporal features...")
+        logger.info("Adding cyclical temporal features...")
         day_of_year = df_weather_flat.index.dayofyear
         norm_denom = config.get('data_processing', {}).get('day_of_year_normalize_denominator', 365.0)
         day_of_year_rad = ((day_of_year - 1) / norm_denom) * 2 * np.pi
@@ -125,10 +136,10 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
 
     elif model_target == 'cnn':
         # --- CNN Path: Structure data into a 4D NumPy array ---
-        print("Processing for CNN: Structuring data into a 4D array...")
+        logger.info("Processing for CNN: Structuring data into a 4D array...")
         
         # Get the variable names to ensure consistent ordering
-        var_names = list(config['era5_var_names'].values())
+        var_names = list(config['feature_var_names'].values())
         
         # Convert the xarray Dataset to a DataArray, stacking variables along a new dimension
         # The resulting shape will be (time, variable, level, latitude, longitude)
@@ -149,7 +160,8 @@ def load_and_prepare_data(config: dict, model_target: str) -> Tuple[Union[pd.Dat
         y = df_cf
 
     else:
+        logger.error(f"Invalid model_target: '{model_target}'. Must be 'ffnn' or 'cnn'.")
         raise ValueError(f"Invalid model_target: '{model_target}'. Must be 'ffnn' or 'cnn'.")
 
-    print(f"Data processing complete. X shape: {X.shape}, y shape: {y.shape}")
+    logger.info(f"Data processing complete. X shape: {X.shape}, y shape: {y.shape}")
     return X, y

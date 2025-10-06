@@ -8,7 +8,7 @@ from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
 from fencast.data_processing import load_and_prepare_data
 from fencast.utils.tools import setup_logger
 
-def run_data_processing(config_name: str, model_target: str, force_save: bool):
+def run_data_processing(config_name: str, model_target: str, force_save: bool, features_prefix: str = "era5_de"):
     """
     Process raw data according to configuration and save processed files.
     
@@ -16,6 +16,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool):
         config_name (str): Name of the configuration file to use.
         model_target (str): The target model architecture ('ffnn' or 'cnn').
         force_save (bool): If True, save without prompting.
+        features_prefix (str): Prefix for feature data files. Default is "era5_de".
     """
     logger = setup_logger("data_processing")
     
@@ -26,7 +27,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool):
         
         # 2. Process the data based on the model target
         logger.info(f"Starting data processing for target: '{model_target}'...")
-        X_processed, y_processed = load_and_prepare_data(config=config, model_target=model_target)
+        X_processed, y_processed = load_and_prepare_data(config=config, model_target=model_target, feature_prefix=features_prefix)
         
         # 3. Define paths and save the results
         setup_name = config.get('setup_name', 'default_setup')
@@ -89,11 +90,17 @@ if __name__ == '__main__':
         action='store_true',
         help='Save without prompting (overwrite existing files)'
     )
+    parser.add_argument(
+        '--feature-prefix', '-p',
+        default='era5_de',
+        help='Prefix for feature data files (default: era5_de)'
+    )
     
     args = parser.parse_args()
     
     run_data_processing(
         config_name=args.config, 
         model_target=args.model_target,
-        force_save=args.force_save
+        force_save=args.force_save,
+        features_prefix=args.feature_prefix
     )

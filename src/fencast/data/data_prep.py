@@ -84,7 +84,7 @@ new_ds_pangu = (
 )
 
 #%% create dataset dictionary
-timedeltas = [0, 1, 3, 5]
+timedeltas = [1, 3, 5]
 pangu_datasets = {}
 for td in timedeltas:
     pangu_datasets[td] = {var: new_ds_pangu[var][:, td, :, :] for var in new_ds_pangu.data_vars}
@@ -92,7 +92,7 @@ for td in timedeltas:
 for td in timedeltas:
     for var, ds in pangu_datasets[td].items():
         print(f"downloading variable: {var}, timedelta: {td}")
-        output_path = cfg["data_raw_dir"] + f"/pangu_de_{var}_td{td}.nc"
+        output_path = cfg["data_raw_dir"] + f"/pangu_td{td}_de_{var}.nc"
         ds.to_netcdf(output_path)
         print(f"saved to: {output_path}")
 
