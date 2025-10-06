@@ -119,3 +119,5 @@ features:
     day_of_year: true
   normalization:
     exclude_patterns: ['day_of_year'] # Patterns to exclude from normalization
+
+# PANGU data settings

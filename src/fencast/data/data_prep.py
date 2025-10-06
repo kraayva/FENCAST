@@ -71,7 +71,7 @@ for var, ds in era5_datasets.items():
 # ---------------------------------------
 
 # load PANGU data
-ds_pangu = xr.open_zarr(cfg["gsWB2_pangu_data"])
+ds_pangu = xr.open_zarr(cfg["gsWB2_pangu_data"], decode_timedelta=True)
 
 # cut out region
 new_ds_pangu = (
@@ -84,9 +84,16 @@ new_ds_pangu = (
 )
 
 #%% create dataset dictionary
-pangu_datasets = {var: new_ds_pangu[var] for var in new_ds_pangu.data_vars}
-print(pangu_datasets)
+timedeltas = [0, 1, 3, 5]
+pangu_datasets = {}
+for td in timedeltas:
+    pangu_datasets[td] = {var: new_ds_pangu[var][:, td, :, :] for var in new_ds_pangu.data_vars}
 #%% download the datasets
-for var, ds in pangu_datasets.items():
-    output_path = cfg["data_raw_dir"] + f"/pangu_de_{var}.nc"
-    ds.to_netcdf(output_path)
+for td in timedeltas:
+    for var, ds in pangu_datasets[td].items():
+        print(f"downloading variable: {var}, timedelta: {td}")
+        output_path = cfg["data_raw_dir"] + f"/pangu_de_{var}_td{td}.nc"
+        ds.to_netcdf(output_path)
+        print(f"saved to: {output_path}")
+
+#%%
