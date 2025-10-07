@@ -120,4 +120,7 @@ features:
   normalization:
     exclude_patterns: ['day_of_year'] # Patterns to exclude from normalization
 
-# PANGU data settings
+# MLWP model output data:
+mlwp_names: ['pangu']
+
+mlwp_timedelta: [0, 1, 2, 3, 5, 8, 14, 20]

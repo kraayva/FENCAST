@@ -17,6 +17,9 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool, f
         model_target (str): The target model architecture ('ffnn' or 'cnn').
         force_save (bool): If True, save without prompting.
         features_prefix (str): Prefix for feature data files. Default is "era5_de".
+
+    ToDos:
+        - Implement data processing logic for multiple feature prefixes (e.g., more than one timedelta).
     """
     logger = setup_logger("data_processing")
     
@@ -97,10 +100,22 @@ if __name__ == '__main__':
     )
     
     args = parser.parse_args()
-    
-    run_data_processing(
+
+    if args.feature_prefix == 'all_mlwp':
+        config = load_config(args.config)
+        prefixes = [f"{name}_td{td:02d}_de" for name in config['mlwp_names'] for td in config['mlwp_timedelta']]
+
+        run_data_processing(
         config_name=args.config, 
         model_target=args.model_target,
         force_save=args.force_save,
-        features_prefix=args.feature_prefix
-    )
+        features_prefix=prefixes
+        )   
+
+    else:
+        run_data_processing(
+            config_name=args.config, 
+            model_target=args.model_target,
+            force_save=args.force_save,
+            features_prefix=args.feature_prefix
+        )
