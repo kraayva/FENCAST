@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# /scripts/run_mlwp_plot.py
 """
 Entry point script for creating MLWP evaluation plots.
 
@@ -19,9 +19,9 @@ def main():
         description="Create MLWP evaluation plots with flexible options",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('config', help='Configuration file name (e.g., datapp_de)')
-    parser.add_argument('model_type', help='Model architecture (e.g., cnn, ffnn)')
-    parser.add_argument('study_name', help='Study name to load results from (or "latest")')
+    parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
+    parser.add_argument('model_type', nargs='?', default='cnn', help='Model architecture (default: cnn)')
+    parser.add_argument('study_name', nargs='?', default='latest', help='Study name to load results from (default: "latest")')
     
     # Weather data options
     parser.add_argument('--weather-rmse-file', 

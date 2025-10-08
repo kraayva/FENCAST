@@ -1,58 +1,67 @@
-# scripts/mlwp_evaluation.py
+#!/usr/bin/env python3
+"""
+Entry point script for evaluating trained CNN models on MLWP weather forecasts.
 
+This script loads a trained CNN model and evaluates its performance when fed with
+MLWP weather model predictions instead of ERA5 data. Results are saved for each
+MLWP model and forecast lead time combination.
+"""
+
+import argparse
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import pandas as pd
 import xarray as xr
-import argparse
 import joblib
 import json
 from pathlib import Path
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch.nn as nn
 
-# Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR, RAW_DATA_DIR
 from fencast.models import DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 
-logger = setup_logger("mlwp_evaluation")
 
-def load_mlwp_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
+def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
     """Loads and merges a specific MLWP forecast dataset."""
     feature_prefix = f"{mlwp_name}_{timedelta}_de"
     feature_var_names = config['feature_var_names']
     
     feature_files = [RAW_DATA_DIR / f'{feature_prefix}_{var}.nc' for var in feature_var_names.keys()]
-    logger.info(f"Loading files with prefix '{feature_prefix}'...")
+    logger.info(f"Loading MLWP data with prefix '{feature_prefix}'...")
     
     missing_files = [f for f in feature_files if not f.exists()]
     if missing_files:
-        logger.error(f"Missing {len(missing_files)} required data files:")
+        logger.error(f"Missing {len(missing_files)} required MLWP data files:")
         for f in missing_files:
             logger.error(f"  - {f}")
-        raise FileNotFoundError(f"Required data files not found. Check that Pangu data is downloaded for {mlwp_name} at {timedelta}.")
+        raise FileNotFoundError(f"Required MLWP data files not found for {mlwp_name} at {timedelta}.")
             
     datasets = [xr.open_dataset(f) for f in feature_files]
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
     return weather_data
 
-def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, study_dir: Path, mlwp_name: str, timedelta_str: str):
+
+def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, study_dir: Path, 
+                          mlwp_name: str, timedelta_str: str) -> dict:
     """
-    Performs a single prediction and evaluation run for one MLWP and timedelta.
+    Evaluates a trained CNN model on MLWP forecast data for a specific lead time.
+    
+    Returns:
+        dict: Evaluation metrics (RMSE, MAE, sample count)
     """
     run_name = f"{mlwp_name}_{timedelta_str}"
-    logger.info(f"\n--- Starting run for: {run_name} ---")
+    logger.info(f"\n--- Evaluating model on: {run_name} ---")
 
     # 1. LOAD AND PROCESS THE MLWP FEATURE DATA
-    # ============================================================================
     try:
-        mlwp_data_xr = load_mlwp_data(config, mlwp_name, timedelta_str)
+        mlwp_data_xr = load_mlwp_forecast_data(config, mlwp_name, timedelta_str)
     except FileNotFoundError as e:
-        logger.error(f"Could not run '{run_name}'. Reason: {e}")
-        return
+        logger.error(f"Could not evaluate '{run_name}'. Reason: {e}")
+        return {'rmse': None, 'mae': None, 'sample_count': 0}
 
     # Process data into the 4D tensor format required by the CNN
     var_names = list(config['feature_var_names'].values())
@@ -62,7 +71,7 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     n_samples, n_vars, n_levels, n_lat, n_lon = X_np.shape
     X_spatial = X_np.reshape(n_samples, n_vars * n_levels, n_lat, n_lon)
     
-    # Generate temporal features
+    # Generate temporal features (day-of-year encoding)
     timestamps = pd.to_datetime(mlwp_data_xr.time.values)
     day_of_year = timestamps.dayofyear
     norm_denom = config.get('data_processing', {}).get('day_of_year_normalize_denominator', 365.0)
@@ -82,8 +91,7 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     )
 
     # 2. GENERATE PREDICTIONS
-    # ============================================================================
-    logger.info("Generating predictions...")
+    logger.info("Generating CNN predictions on MLWP data...")
     device = next(model.parameters()).device
     data_loader = DataLoader(dataset, batch_size=256, shuffle=False)
     all_predictions = []
@@ -94,7 +102,6 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     predictions_np = np.concatenate(all_predictions, axis=0)
 
     # 3. ALIGN WITH GROUND TRUTH AND EVALUATE
-    # ============================================================================
     logger.info("Aligning predictions with ground truth and evaluating...")
     
     # Load the full ground truth dataset
@@ -137,7 +144,6 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
             logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}")
 
     # 4. SAVE RESULTS
-    # ============================================================================
     output_dir = study_dir / "mlwp_evaluation" / mlwp_name
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -146,19 +152,35 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     with open(output_dir / f"metrics_{timedelta_str}.json", 'w') as f:
         json.dump(metrics, f, indent=4)
     logger.info(f"Results for {run_name} saved to {output_dir}")
+    
+    return metrics
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Evaluate a trained CNN on MLWP forecast datasets.')
-    parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name.')
-    parser.add_argument('--study-name', '-s', default='latest', help='Study name to load the model from. Default: latest.')
+def main():
+    parser = argparse.ArgumentParser(
+        description="Evaluate trained CNN models on MLWP weather forecasts",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('config', nargs='?', default='datapp_de', 
+                       help='Configuration file name (default: datapp_de)')
+    parser.add_argument('--study-name', '-s', default='latest', 
+                       help='Study name to load the model from (default: latest)')
+    parser.add_argument('--mlwp-models', nargs='+',
+                       help='Specific MLWP models to evaluate (default: all from config)')
+    parser.add_argument('--timedeltas', nargs='+', type=int,
+                       help='Specific forecast lead times to evaluate (default: all from config)')
     
     args = parser.parse_args()
     
+    # Setup logging
+    logger = setup_logger("mlwp_evaluation")
+    logger.info(f"Starting MLWP evaluation for config: {args.config}")
+    
+    # Load configuration
     config = load_config(args.config)
     setup_name = config.get('setup_name', 'default_setup')
     
-    # Find the study directory and load the trained model once
+    # Find the study directory and load the trained model
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
         study_dir = get_latest_study_dir(results_parent_dir, model_type='cnn') if args.study_name == 'latest' else results_parent_dir / args.study_name
@@ -172,21 +194,33 @@ if __name__ == '__main__':
         
     except FileNotFoundError as e:
         logger.error(f"Failed to load model. Reason: {e}")
-        exit()
+        return
 
-    # Get experiment parameters from config
-    mlwp_names = config.get('mlwp_names', [])
-    mlwp_timedeltas = config.get('mlwp_timedelta', [])
+    # Get experiment parameters from config or command line
+    mlwp_names = args.mlwp_models if args.mlwp_models else config.get('mlwp_names', [])
+    mlwp_timedeltas = args.timedeltas if args.timedeltas else config.get('mlwp_timedelta', [])
 
     if not mlwp_names or not mlwp_timedeltas:
-        logger.error("Config keys 'mlwp_names' or 'mlwp_timedelta' are missing or empty in the config file.")
-        exit()
+        logger.error("No MLWP models or timedeltas specified. Check config or use --mlwp-models and --timedeltas arguments.")
+        return
+
+    logger.info(f"Evaluating {len(mlwp_names)} MLWP models on {len(mlwp_timedeltas)} forecast lead times")
 
     # Loop through all combinations and run evaluation
     for mlwp in mlwp_names:
         for td in mlwp_timedeltas:
             # Format timedelta string like 'td01', 'td02'
             td_str = f"td{td:02d}"
-            predict_and_evaluate_run(config, model, setup_name, study_dir, mlwp, td_str)
+            try:
+                metrics = evaluate_model_on_mlwp(config, model, setup_name, study_dir, mlwp, td_str)
+            except Exception as e:
+                logger.error(f"Error evaluating {mlwp} {td_str}: {e}")
+                continue
             
-    logger.info("\nAll evaluation runs complete.")
+    logger.info("\nAll MLWP evaluation runs complete.")
+
+
+if __name__ == "__main__":
+    # Global logger for the module
+    logger = setup_logger("mlwp_evaluation")
+    main()

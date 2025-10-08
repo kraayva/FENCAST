@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# /scripts/run_mlwp_rmse.py
 """
 Entry point script for calculating weather prediction RMSE from MLWP models.
 
@@ -19,7 +19,7 @@ def main():
         description="Calculate weather prediction RMSE for MLWP models",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('config', help='Configuration file name (e.g., datapp_de)')
+    parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
     parser.add_argument('--output-file', '-o', 
                        default='weather_rmse_results.csv',
                        help='Output CSV file name')
@@ -35,7 +35,7 @@ def main():
                        default=['t', 'q', 'u', 'v', 'z'],
                        help='Weather variables to evaluate')
     parser.add_argument('--levels', nargs='+', type=int,
-                       default=[1000, 850, 500, 200],
+                       default=[1000, 850, 500],
                        help='Pressure levels to evaluate')
     
     args = parser.parse_args()
