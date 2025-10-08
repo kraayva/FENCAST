@@ -60,6 +60,7 @@ datasets/
 *.tsv
 
 # --- Results / Outputs ---
+/archive/
 /model/
 outputs/
 results/

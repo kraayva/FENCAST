@@ -27,9 +27,12 @@ def load_mlwp_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
     feature_files = [RAW_DATA_DIR / f'{feature_prefix}_{var}.nc' for var in feature_var_names.keys()]
     logger.info(f"Loading files with prefix '{feature_prefix}'...")
     
-    for f in feature_files:
-        if not f.exists():
-            raise FileNotFoundError(f"Required data file not found: {f}")
+    missing_files = [f for f in feature_files if not f.exists()]
+    if missing_files:
+        logger.error(f"Missing {len(missing_files)} required data files:")
+        for f in missing_files:
+            logger.error(f"  - {f}")
+        raise FileNotFoundError(f"Required data files not found. Check that Pangu data is downloaded for {mlwp_name} at {timedelta}.")
             
     datasets = [xr.open_dataset(f) for f in feature_files]
     weather_data = xr.merge(datasets, compat='override', join='inner')
@@ -62,7 +65,7 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     # Generate temporal features
     timestamps = pd.to_datetime(mlwp_data_xr.time.values)
     day_of_year = timestamps.dayofyear
-    norm_denom = 365.0
+    norm_denom = config.get('data_processing', {}).get('day_of_year_normalize_denominator', 365.0)
     day_of_year_rad = ((day_of_year - 1) / norm_denom) * 2 * np.pi
     X_temporal = np.stack([np.sin(day_of_year_rad), np.cos(day_of_year_rad)], axis=1)
     
@@ -97,8 +100,10 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
     # Load the full ground truth dataset
     gt_file = PROJECT_ROOT / config['target_data_raw']
     gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    gt_df.index = gt_df.index + pd.Timedelta(hours=12) # Apply same noon-shift as in processing
-    
+    drop_cols = config.get('data_processing', {}).get('drop_columns', [])
+    if drop_cols:
+        gt_df = gt_df.drop(columns=drop_cols, errors='ignore')
+   
     # Create predictions DataFrame
     preds_df = pd.DataFrame(predictions_np, index=timestamps, columns=gt_df.columns)
     
@@ -111,11 +116,25 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
         logger.warning("No overlapping timestamps found between predictions and ground truth. Cannot calculate metrics.")
         metrics = {'rmse': None, 'mae': None, 'sample_count': 0}
     else:
+        # Find any row that has a NaN in either the ground truth or the predictions
+        invalid_rows_mask = aligned_gt.isna().any(axis=1) | aligned_preds.isna().any(axis=1)
+        
+        # Drop these rows from both DataFrames before calculating metrics
+        clean_gt = aligned_gt[~invalid_rows_mask]
+        clean_preds = aligned_preds[~invalid_rows_mask]
+        
+        if invalid_rows_mask.any():
+            logger.info(f"Removed {invalid_rows_mask.sum()} out of {len(aligned_gt)} rows containing NaN values before calculating metrics.")
+
         # Calculate metrics
-        rmse = np.sqrt(mean_squared_error(aligned_gt, aligned_preds))
-        mae = mean_absolute_error(aligned_gt, aligned_preds)
-        metrics = {'rmse': rmse, 'mae': mae, 'sample_count': len(aligned_gt)}
-        logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}")
+        if clean_gt.empty:
+            logger.warning("All aligned rows contained NaN values. Cannot calculate metrics.")
+            metrics = {'rmse': None, 'mae': None, 'sample_count': 0}
+        else:
+            rmse = np.sqrt(mean_squared_error(clean_gt, clean_preds))
+            mae = mean_absolute_error(clean_gt, clean_preds)
+            metrics = {'rmse': rmse, 'mae': mae, 'sample_count': len(clean_gt)}
+            logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}")
 
     # 4. SAVE RESULTS
     # ============================================================================
@@ -132,7 +151,7 @@ def predict_and_evaluate_run(config: dict, model: nn.Module, setup_name: str, st
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate a trained CNN on MLWP forecast datasets.')
     parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name.')
-    parser.add_argument('--study-name', '-s', default='latest', help='Study name to load the model from.')
+    parser.add_argument('--study-name', '-s', default='latest', help='Study name to load the model from. Default: latest.')
     
     args = parser.parse_args()
     
