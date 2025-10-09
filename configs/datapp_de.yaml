@@ -78,7 +78,18 @@ tuning:
   # General settings applicable to all models
   trials: 50
   epochs: 30
-  activations: ['ELU']
+  
+  activation: 'ELU'
+  scheduler: 'ReduceLROnPlateau'
+  patience: 3 
+  factor: 0.2
+
+  weight_decay:
+      min: 1.0e-5
+      max: 1.0e-2
+      log_scale: true
+
+  early_stopping_patience: 10
 
   # FFNN-specific hyperparameter search space
   ffnn:
@@ -101,17 +112,17 @@ tuning:
       min: 1.0e-5
       max: 1.0e-3
       log_scale: true
+    optimizer: ['Adam', 'AdamW']  # Tune - try both optimizers
     dropout:
-      min: 0.05
+      min: 0.01  # Updated range
       max: 0.2
-    conv_layers:
-      min_layers: 2
-      max_layers: 2
+      log_scale: true  # Logarithmic tuning
+    conv_layers: 2  # Fixed - always 2 layers
     filters:
       min: 16
       max: 128
       step: 16
-    kernel_size: [3, 5]
+    kernel_size: [3, 5]  # Tune - try both kernel sizes
 
 # Feature Engineering Settings
 features:

@@ -20,9 +20,47 @@ from fencast.utils.tools import setup_logger
 logger = setup_logger("hyperparameter_tuning")
 
 
+def suggest_parameter(trial: optuna.Trial, param_name: str, param_config, logger):
+    """
+    Intelligently suggest parameters based on config structure:
+    - Single value: Use as fixed parameter (no tuning)
+    - Dict with min/max: Suggest range
+    - List: Suggest categorical
+    """
+    if isinstance(param_config, dict):
+        if 'min' in param_config and 'max' in param_config:
+            # Range tuning
+            if param_config.get('log_scale', False):
+                return trial.suggest_float(param_name, param_config['min'], param_config['max'], log=True)
+            elif 'step' in param_config:
+                return trial.suggest_int(param_name, param_config['min'], param_config['max'], step=param_config['step'])
+            else:
+                return trial.suggest_float(param_name, param_config['min'], param_config['max'])
+        elif 'min_layers' in param_config:
+            # Special case for layer configuration
+            return param_config  # Return the full config for complex handling
+        else:
+            # Dict with other structure - treat as fixed
+            logger.info(f"Parameter '{param_name}' has dict config but no min/max - treating as fixed")
+            return param_config
+    elif isinstance(param_config, list):
+        if len(param_config) > 1:
+            # Categorical tuning
+            return trial.suggest_categorical(param_name, param_config)
+        else:
+            # Single item list - treat as fixed
+            logger.info(f"Parameter '{param_name}' has single-item list - treating as fixed: {param_config[0]}")
+            return param_config[0]
+    else:
+        # Single value - fixed parameter
+        logger.info(f"Parameter '{param_name}' is fixed: {param_config}")
+        return param_config
+
+
 def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     """
     Optuna objective function to tune hyperparameters for a given model architecture.
+    Intelligently determines what to tune vs. what to keep fixed based on config structure.
     """
     # 1. SETUP & HYPERPARAMETER SUGGESTIONS
     # ============================================================================
@@ -36,49 +74,70 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     params = {}
 
-    if model_type == 'ffnn':
-        lr_config = model_tuning_config.get('learning_rate', {})
-        dropout_config = model_tuning_config.get('dropout', {})
-        layers_config = model_tuning_config.get('hidden_layers', {})
-
-        params['lr'] = trial.suggest_float("lr", lr_config.get('min'), lr_config.get('max'), log=lr_config.get('log_scale'))
-        params['dropout_rate'] = trial.suggest_float("dropout", dropout_config.get('min'), dropout_config.get('max'))
-        params['n_layers'] = trial.suggest_int("n_layers", layers_config.get('min_layers'), layers_config.get('max_layers'))
-
-        hidden_layers = []
-        for i in range(params['n_layers']):
-            n_units = trial.suggest_int(f"n_units_l{i}", layers_config.get('min_units'), layers_config.get('max_units'))
-            hidden_layers.append(n_units)
-        params['hidden_layers'] = hidden_layers
-
-    elif model_type == 'cnn':
-        lr_config = model_tuning_config.get('learning_rate', {})
-        dropout_config = model_tuning_config.get('dropout', {})
-        conv_layers_config = model_tuning_config.get('conv_layers', {})
-        filters_config = model_tuning_config.get('filters', {})
-
-        # Dynamically suggest learning rate scheduler parameters if a scheduler is used
-        params['lr'] = trial.suggest_float("lr", lr_config.get('min'), lr_config.get('max'), log=lr_config.get('log_scale'))
-        scheduler_name = trial.suggest_categorical("scheduler", ["None", "ReduceLROnPlateau"])
+    # Suggest general training parameters
+    params['lr'] = suggest_parameter(trial, "lr", model_tuning_config.get('learning_rate'), logger)
+    params['activation_name'] = suggest_parameter(trial, "activation", tuning_config.get('activation'), logger)
+    params['weight_decay'] = suggest_parameter(trial, "weight_decay", tuning_config.get('weight_decay'), logger)
+    
+    # Handle scheduler configuration
+    scheduler_config = tuning_config.get('scheduler')
+    if scheduler_config == 'ReduceLROnPlateau':
+        # Fixed scheduler - always use it
+        scheduler_name = 'ReduceLROnPlateau'
+        scheduler_params = {
+            'patience': tuning_config.get('patience', 3),
+            'factor': tuning_config.get('factor', 0.2)
+        }
+        logger.info(f"Using fixed scheduler: {scheduler_name} with patience={scheduler_params['patience']}, factor={scheduler_params['factor']}")
+    else:
+        # Could be None or a list to tune
+        scheduler_name = suggest_parameter(trial, "scheduler", scheduler_config, logger)
         scheduler_params = {}
         if scheduler_name == "ReduceLROnPlateau":
-            # Let Optuna tune the scheduler's patience and reduction factor
-            scheduler_params['patience'] = trial.suggest_int("patience", 2, 5)
-            scheduler_params['factor'] = trial.suggest_float("factor", 0.1, 0.5)
-        
-        # Other hyperparameters
-        params['dropout_rate'] = trial.suggest_float("dropout", dropout_config.get('min'), dropout_config.get('max'))
-        params['n_conv_layers'] = trial.suggest_int("n_conv_layers", conv_layers_config.get('min_layers'), conv_layers_config.get('max_layers'))
-        params['kernel_size'] = trial.suggest_categorical("kernel_size", model_tuning_config.get('kernel_size', [3, 5]))
+            scheduler_params['patience'] = suggest_parameter(trial, "patience", tuning_config.get('patience', 3), logger)
+            scheduler_params['factor'] = suggest_parameter(trial, "factor", tuning_config.get('factor', 0.2), logger)
 
-        out_channels = []
-        for i in range(params['n_conv_layers']):
-            n_filters = trial.suggest_int(f"n_filters_l{i}", filters_config.get('min'), filters_config.get('max'), step=filters_config.get('step', 1))
-            out_channels.append(n_filters)
-        params['out_channels'] = out_channels
+    if model_type == 'ffnn':
+        params['dropout_rate'] = suggest_parameter(trial, "dropout", model_tuning_config.get('dropout'), logger)
         
+        # Handle hidden layers configuration
+        layers_config = model_tuning_config.get('hidden_layers', {})
+        if isinstance(layers_config, dict) and 'min_layers' in layers_config:
+            # Tune number of layers and units
+            params['n_layers'] = trial.suggest_int("n_layers", layers_config.get('min_layers'), layers_config.get('max_layers'))
+            hidden_layers = []
+            for i in range(params['n_layers']):
+                n_units = trial.suggest_int(f"n_units_l{i}", layers_config.get('min_units'), layers_config.get('max_units'))
+                hidden_layers.append(n_units)
+            params['hidden_layers'] = hidden_layers
+        else:
+            # Fixed hidden layers
+            params['hidden_layers'] = layers_config
+            logger.info(f"Using fixed hidden layers: {layers_config}")
 
-    params['activation_name'] = trial.suggest_categorical("activation", tuning_config.get('activations', ["ReLU", "ELU"]))
+    elif model_type == 'cnn':
+        params['dropout_rate'] = suggest_parameter(trial, "dropout", model_tuning_config.get('dropout'), logger)
+        params['n_conv_layers'] = suggest_parameter(trial, "n_conv_layers", model_tuning_config.get('conv_layers'), logger)
+        params['kernel_size'] = suggest_parameter(trial, "kernel_size", model_tuning_config.get('kernel_size'), logger)
+        
+        # Handle optimizer tuning
+        optimizer_config = model_tuning_config.get('optimizer', 'Adam')
+        params['optimizer_name'] = suggest_parameter(trial, "optimizer", optimizer_config, logger)
+
+        # Handle filters configuration
+        filters_config = model_tuning_config.get('filters', {})
+        if isinstance(filters_config, dict) and 'min' in filters_config:
+            # Tune number of filters for each layer
+            out_channels = []
+            for i in range(params['n_conv_layers']):
+                n_filters = trial.suggest_int(f"n_filters_l{i}", filters_config['min'], filters_config['max'], 
+                                            step=filters_config.get('step', 1))
+                out_channels.append(n_filters)
+            params['out_channels'] = out_channels
+        else:
+            # Fixed filters
+            params['out_channels'] = filters_config
+            logger.info(f"Using fixed filters: {filters_config}")
     logger.info(f"Trial {trial.number} Parameters: {json.dumps(params, indent=4)}")
 
     output_size = config['target_size']
@@ -112,7 +171,17 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         ).to(device)
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
+    
+    # Create optimizer based on configuration
+    optimizer_name = params.get('optimizer_name', 'Adam')
+    if optimizer_name == 'AdamW':
+        weight_decay = params.get('weight_decay', 0.0)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=params['lr'], weight_decay=weight_decay)
+        logger.info(f"Trial {trial.number}: Using optimizer: {optimizer_name} with weight_decay={weight_decay:.2e}")
+    else:  # Default to Adam
+        optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
+        logger.info(f"Trial {trial.number}: Using optimizer: {optimizer_name}")
+    
     scheduler = None
     if scheduler_name == "ReduceLROnPlateau":
         logger.info(f"Trial {trial.number}: Using ReduceLROnPlateau scheduler.")
