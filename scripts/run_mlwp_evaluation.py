@@ -140,8 +140,24 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
         else:
             rmse = np.sqrt(mean_squared_error(clean_gt, clean_preds))
             mae = mean_absolute_error(clean_gt, clean_preds)
-            metrics = {'rmse': rmse, 'mae': mae, 'sample_count': len(clean_gt)}
-            logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}")
+            
+            # Get actual forecast lead time from MLWP file
+            try:
+                from fencast.utils.tools import get_mlwp_forecast_lead_time
+                actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+            except Exception:
+                # Fallback calculation
+                td_num = int(timedelta_str.replace('td', ''))
+                actual_lead_time_days = (td_num + 1) * 6 / 24
+            
+            metrics = {
+                'rmse': rmse, 
+                'mae': mae, 
+                'sample_count': len(clean_gt),
+                'forecast_lead_time_days': actual_lead_time_days,
+                'forecast_lead_time_hours': actual_lead_time_days * 24
+            }
+            logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}, Lead time = {actual_lead_time_days:.2f} days")
 
     # 4. SAVE RESULTS
     output_dir = study_dir / "mlwp_evaluation" / mlwp_name

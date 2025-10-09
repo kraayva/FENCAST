@@ -59,13 +59,27 @@ def load_energy_prediction_data(study_dir: Path) -> pd.DataFrame:
     results = []
     for f in metric_files:
         mlwp_name = f.parent.name
-        timedelta_str = f.stem.replace('metrics_td', '')
+        timedelta_str = f.stem.replace('metrics_', '')  # Get 'td03', 'td07', etc.
         with open(f, 'r') as fp:
             data = json.load(fp)
             if data['rmse'] is not None:
+                # Try to get forecast lead time from saved metrics first
+                if 'forecast_lead_time_days' in data:
+                    actual_lead_time_days = data['forecast_lead_time_days']
+                else:
+                    # Try to get actual forecast lead time from MLWP files
+                    try:
+                        from fencast.utils.tools import get_mlwp_forecast_lead_time
+                        # Use any variable to get the forecast lead time (all should be the same)
+                        actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+                    except Exception:
+                        # Fallback: extract number from filename and convert
+                        td_num = int(timedelta_str.replace('td', ''))
+                        actual_lead_time_days = (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
+                
                 results.append({
                     'mlwp_model': mlwp_name,
-                    'timedelta_days': int(timedelta_str),
+                    'timedelta_days': actual_lead_time_days,
                     'rmse': data['rmse']
                 })
     

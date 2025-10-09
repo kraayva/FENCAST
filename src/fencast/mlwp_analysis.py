@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error
 from typing import Dict, List
 
 from fencast.utils.paths import PROJECT_ROOT
-from fencast.utils.tools import setup_logger, load_era5_data, load_mlwp_data
+from fencast.utils.tools import setup_logger, load_era5_data, load_mlwp_data, get_mlwp_forecast_lead_time
 
 logger = setup_logger("mlwp_analysis")
 
@@ -206,10 +206,21 @@ def calculate_mlwp_weather_rmse(config: dict, output_file: str) -> pd.DataFrame:
             td_str = f"td{td:02d}"
             logger.info(f"\n--- Processing {mlwp_name} {td_str} ---")
             
+            # Get actual forecast lead time from MLWP file
+            try:
+                first_var = list(feature_var_names.keys())[0]
+                actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, td_str, first_var)
+                logger.info(f"File {td_str}: Actual forecast lead time = {actual_lead_time_days:.2f} days ({actual_lead_time_days*24:.1f} hours)")
+            except Exception as e:
+                logger.warning(f"Could not determine actual lead time for {td_str}, using fallback calculation: {e}")
+                # Fallback: config value represents 6h steps shifted by 1
+                actual_lead_time_days = (td + 1) * 6 / 24  # Convert to days
+            
             result_row = {
                 'mlwp_model': mlwp_name,
-                'timedelta_days': td,
-                'timedelta_hours': td * 24
+                'timedelta_days': actual_lead_time_days,
+                'timedelta_hours': actual_lead_time_days * 24,
+                'timedelta_file_index': td  # Keep original config index for reference
             }
             
             for var_name in feature_var_names.keys():

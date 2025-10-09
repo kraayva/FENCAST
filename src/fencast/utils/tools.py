@@ -87,10 +87,10 @@ def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: st
     
     ds = xr.open_dataset(mlwp_file)
     try:
-        # Extract prediction_timedelta and convert to days
-        timedelta_days = ds['prediction_timedelta'].values / np.timedelta64(1, 'D')
-        # Return scalar value (assume all forecasts have same lead time)
-        return float(timedelta_days) if np.isscalar(timedelta_days) else float(timedelta_days[0])
+        # Extract prediction_timedelta (single value) and convert to days
+        timedelta_ns = ds['prediction_timedelta'].values
+        timedelta_days = float(timedelta_ns / np.timedelta64(1, 'D'))
+        return timedelta_days
     finally:
         ds.close()
 
