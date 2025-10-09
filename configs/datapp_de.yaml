@@ -123,4 +123,4 @@ features:
 # MLWP model output data:
 mlwp_names: ['pangu']
 
-mlwp_timedelta: [0, 1, 2, 3, 5, 8, 14, 20]
+mlwp_timedelta: [1, 5, 9, 13, 17, 21, 25, 29, 33, 37]

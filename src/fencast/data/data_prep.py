@@ -80,7 +80,7 @@ new_ds_pangu = (
          longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
     [cfm["feature_variables"].keys()]
     .sel(level=cfm["feature_level"])
-    .sel(time=ds_pangu['time'].dt.hour == 12)
+    .sel(time=ds_pangu['time'].dt.hour == 0)
 )
 
 #%% create dataset dictionary
@@ -93,6 +93,73 @@ for td in timedeltas:
     for var, ds in pangu_datasets[td].items():
         print(f"downloading variable: {var}, timedelta: {td}")
         output_path = cfg["data_raw_dir"] + f"/pangu_td{td:02d}_de_{var}.nc"
+        ds.to_netcdf(output_path)
+        print(f"saved to: {output_path}")
+
+#%%
+# ---------------------------------------
+# ---------- NeuralGCM DATA -------------
+# ---------------------------------------
+
+# load NeuralGCM data
+ds_ngcm = xr.open_zarr(cfg["gsWB2_neuralgcm_data"], decode_timedelta=True)
+
+# cut out region
+new_ds_ngcm = (
+    ds_ngcm
+    .sel(latitude=slice(cfm["feature_region"]["lat_min"], cfm["feature_region"]["lat_max"]),
+         longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+    [cfm["feature_variables"].keys()]
+    .sel(level=cfm["feature_level"])
+    .sel(time=ds_ngcm['time'].dt.hour == 12)
+)
+
+print(new_ds_ngcm)
+
+#%% create dataset dictionary
+timedeltas = cfm["mlwp_timedelta"]
+ngcm_datasets = {}
+for td in timedeltas:
+    ngcm_datasets[td] = {var: new_ds_ngcm[var][:, td, :, :] for var in new_ds_ngcm.data_vars}
+
+#%% download the datasets
+for td in timedeltas:
+    for var, ds in ngcm_datasets[td].items():
+        print(f"downloading variable: {var}, timedelta: {td}")
+        output_path = cfg["data_raw_dir"] + f"/ngcm_td{td:02d}_de_{var}.nc"
+        ds.to_netcdf(output_path)
+        print(f"saved to: {output_path}")
+# %%
+
+# ---------------------------------------
+# ------------- IFS DATA ----------------
+# ---------------------------------------
+
+# load IFS data
+ds_ifs = xr.open_zarr(cfg["gsWB2_ifs_data"], decode_timedelta=True)
+
+# cut out region
+new_ds_ifs = (
+    ds_ifs
+    .sel(latitude=slice(cfm["feature_region"]["lat_min"], cfm["feature_region"]["lat_max"]),
+         longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
+    [cfm["feature_variables"].keys()]
+    .sel(level=cfm["feature_level"])
+    .sel(time=ds_ifs['time'].dt.hour == 12)
+)
+print(new_ds_ifs)
+
+#%% create dataset dictionary
+timedeltas = cfm["mlwp_timedelta"]
+ifs_datasets = {}
+for td in timedeltas:
+    ifs_datasets[td] = {var: new_ds_ifs[var][:, td, :, :] for var in new_ds_ifs.data_vars}
+
+#%% download the datasets
+for td in timedeltas:
+    for var, ds in ifs_datasets[td].items():
+        print(f"downloading variable: {var}, timedelta: {td}")
+        output_path = cfg["data_raw_dir"] + f"/ifs_td{td:02d}_de_{var}.nc"
         ds.to_netcdf(output_path)
         print(f"saved to: {output_path}")
 

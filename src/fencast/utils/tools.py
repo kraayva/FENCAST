@@ -75,6 +75,26 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
     return xr.open_dataset(era5_file)
 
 
+def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: str) -> float:
+    """Get the actual forecast lead time in days from MLWP file."""
+    import numpy as np
+    import xarray as xr
+    from fencast.utils.paths import RAW_DATA_DIR
+    
+    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_{timedelta_str}_de_{var_name}.nc"
+    if not mlwp_file.exists():
+        raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
+    
+    ds = xr.open_dataset(mlwp_file)
+    try:
+        # Extract prediction_timedelta and convert to days
+        timedelta_days = ds['prediction_timedelta'].values / np.timedelta64(1, 'D')
+        # Return scalar value (assume all forecasts have same lead time)
+        return float(timedelta_days) if np.isscalar(timedelta_days) else float(timedelta_days[0])
+    finally:
+        ds.close()
+
+
 def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dataset':
     """Loads MLWP prediction data for a specific variable and timedelta."""
     import xarray as xr

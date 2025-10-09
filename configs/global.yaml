@@ -10,4 +10,5 @@ data_tmp_dir: data/tmp
 gsWB2_graphcast_data: gs://weatherbench2/datasets/graphcast/date_range_2019-11-16_2021-02-01_12_hours.zarr
 gsWB2_era5_data: gs://weatherbench2/datasets/era5/
 gsWB2_pangu_data: gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr
-gsWB2_neuralgcm_data: gs://weatherbench2/datasets/neuralgcm_deterministic/2020-240x121_equiangular_with_poles_conservative.zarr
+gsWB2_neuralgcm_data: gs://weatherbench2/datasets/neuralgcm_deterministic/2020-512x256.zarr/
+gsWB2_ifs_data: gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr
