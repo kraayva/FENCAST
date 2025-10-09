@@ -48,7 +48,7 @@ class DynamicCNN(nn.Module):
 
         # 1. Dynamically calculate input dimensions from the config
         # ----------------------------------------------------------------------
-        input_channels = len(self.config['era5_var_names']) * len(self.config['feature_level'])
+        input_channels = len(self.config['feature_var_names']) * len(self.config['feature_level'])
         
         lat_min, lat_max = self.config['feature_region']['lat_min'], self.config['feature_region']['lat_max']
         lon_min, lon_max = self.config['feature_region']['lon_min'], self.config['feature_region']['lon_max']

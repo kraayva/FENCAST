@@ -52,22 +52,23 @@ split_years:
   # All other years will be used for training
   validation: 
     - 2005
+    - 2006
     - 2010
-    - 2015
+    - 2011
+    - 2014
   test: 
-    - 2000
-    - 2007
-    - 2012
     - 2018
-    - 2023
+    - 2019
+    - 2020
+    - 2021
+    - 2022
 
-# Model architecture settings for final training (not tuning)
+# Model architecture settings for final training
 model:
   ffnn:
     hidden_layers: [1024, 512]
     dropout_rate: 0.3
   cnn:
-    # Define your final CNN architecture here after tuning
   batch_sizes:
     training: 64
     evaluation: 256
@@ -75,54 +76,65 @@ model:
 
 # Hyperparameter Tuning Settings
 tuning:
-  # General settings applicable to all models
+  # Hyperparameter will be tuned if a dict. Otherwise, fixed value is used.
   trials: 50
-  epochs: 30
+  epochs: 50
   
-  activation: 'ELU'
-  scheduler: 'ReduceLROnPlateau'
-  patience: 3 
-  factor: 0.2
+  activation_name: 'ELU'
+  scheduler_name: 'ReduceLROnPlateau'
+  scheduler_patience: 3 
+  scheduler_factor: 0.2
 
   weight_decay:
-      min: 1.0e-5
-      max: 1.0e-2
-      log_scale: true
+    type: float
+    min: 1.0e-5
+    max: 1.0e-2
+    log_scale: true
 
-  early_stopping_patience: 10
+  early_stopping_patience: 6
 
-  # FFNN-specific hyperparameter search space
-  ffnn:
-    learning_rate:
-      min: 5.0e-6
-      max: 5.0e-3
-      log_scale: true
-    dropout:
-      min: 0.05
-      max: 0.3
-    hidden_layers:
-      min_layers: 3
-      max_layers: 4
-      min_units: 256
-      max_units: 2048
-  
-  # CNN-specific hyperparameter search space
-  cnn:
-    learning_rate:
-      min: 1.0e-5
-      max: 1.0e-3
-      log_scale: true
-    optimizer: ['Adam', 'AdamW']  # Tune - try both optimizers
-    dropout:
-      min: 0.01  # Updated range
-      max: 0.2
-      log_scale: true  # Logarithmic tuning
-    conv_layers: 2  # Fixed - always 2 layers
-    filters:
-      min: 16
-      max: 128
-      step: 16
-    kernel_size: [3, 5]  # Tune - try both kernel sizes
+# FFNN-specific hyperparameter
+ffnn_tuning:
+  lr:
+    type: float
+    min: 5.0e-6
+    max: 5.0e-3
+    log_scale: true
+  dropout:
+    type: float
+    min: 0.05
+    max: 0.3
+  hidden_layers:
+    type: list
+    values: [3, 4, 5]
+  hidden_layers_units:
+    type: int
+    step: 64
+    min: 256
+    max: 2048
+
+# CNN-specific hyperparameter
+cnn_tuning:
+  lr:
+    type: float
+    min: 1.0e-5
+    max: 1.0e-3
+    log_scale: true
+  optimizer_name: ['Adam', 'AdamW'] 
+  dropout_rate:
+    type: float
+    min: 0.01
+    max: 0.2
+    log_scale: true
+  n_conv_layers: 2
+  filters:
+    type: int
+    min: 16
+    max: 128
+    step: 16
+  kernel_size: 
+    type: list
+    values: [3, 5]
 
 # Feature Engineering Settings
 features:
