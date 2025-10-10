@@ -61,7 +61,15 @@ split_years:
     - 2019
     - 2020
     - 2021
-    - 2022
+
+# Cross Validation Configuration
+cross_validation:
+  k_folds: 5
+  epochs: 30  # Typically fewer epochs than tuning since we're using pre-optimized hyperparameters
+  validation_metric: 'mse_loss'  # Metric to use for fold comparison
+  save_individual_models: true   # Save best model from each fold
+  year_based_splitting: true     # Use year-based splits for temporal consistency
+
 
 # Model architecture settings for final training
 model:

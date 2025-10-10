@@ -18,7 +18,8 @@ class FencastDataset(Dataset):
     and handles normalization appropriate for the specified model type.
     For CNNs, it provides two separate inputs: spatial and temporal features.
     """
-    def __init__(self, config: dict, mode: str, model_type: str, apply_normalization: bool = True):
+    def __init__(self, config: dict, mode: str, model_type: str, apply_normalization: bool = True, 
+                 custom_years: list = None):
         super().__init__()
         if mode not in ['train', 'validation', 'test']:
             raise ValueError("Mode must be 'train', 'validation', or 'test'")
@@ -29,6 +30,7 @@ class FencastDataset(Dataset):
         self.mode = mode
         self.model_type = model_type
         self.setup_name = self.config['setup_name']
+        self.custom_years = custom_years  # For cross validation custom year filtering
         
         self._load_data()
         self._split_data()
@@ -66,8 +68,13 @@ class FencastDataset(Dataset):
         """
         Filters the data based on years. This logic is driven by the label's
         time index, which works for both NumPy arrays and DataFrames.
+        Supports custom year filtering for cross validation.
         """
-        if self.mode == 'train':
+        # Use custom years if provided (for cross validation)
+        if self.custom_years is not None:
+            print(f"[{self.mode}] Using custom years for CV: {sorted(self.custom_years)}")
+            mask = self.y.index.year.isin(self.custom_years)
+        elif self.mode == 'train':
             validation_years = self.config['split_years']['validation']
             test_years = self.config['split_years']['test']
             exclude_years = set(validation_years + test_years)
