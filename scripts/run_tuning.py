@@ -199,6 +199,7 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 
     for epoch in range(epochs):
         model.train()
+        training_losses = []
         for batch in train_loader:
             if model_type == 'cnn':
                 spatial_features, temporal_features, labels = batch
@@ -214,6 +215,8 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            training_losses.append(loss.item())
+        avg_training_loss = np.mean(training_losses)
 
         model.eval()
         validation_losses = []
@@ -239,7 +242,11 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         if scheduler:
             scheduler.step(avg_validation_loss)
 
+        # Report validation loss (primary metric for optimization)
         trial.report(avg_validation_loss, epoch)
+        
+        # Set training loss as user attribute for logging/visualization
+        trial.set_user_attr(f'training_loss_epoch_{epoch}', avg_training_loss)
 
         if trial.should_prune():
             logger.warning(f"--- Trial {trial.number} pruned at epoch {epoch + 1} ---")
@@ -288,7 +295,8 @@ if __name__ == '__main__':
     storage_name = f"sqlite:///{db_path}"
     pruner = optuna.pruners.MedianPruner(
         n_startup_trials=5, # number of trials before pruning
-        n_warmup_steps=3 # number of epochs before pruning
+        n_warmup_steps=15 # number of epochs before pruning
+        
     )
 
     study = optuna.create_study(

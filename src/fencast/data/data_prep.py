@@ -83,7 +83,7 @@ new_ds_pangu = (
     .sel(time=ds_pangu['time'].dt.hour == 0)
 )
 
-#%% create dataset dictionary
+# create dataset dictionary
 timedeltas = cfm["mlwp_timedelta"]
 pangu_datasets = {}
 for td in timedeltas:
@@ -93,8 +93,11 @@ for td in timedeltas:
     for var, ds in pangu_datasets[td].items():
         print(f"downloading variable: {var}, timedelta: {td}")
         output_path = cfg["data_raw_dir"] + f"/pangu_td{td:02d}_de_{var}.nc"
-        ds.to_netcdf(output_path)
-        print(f"saved to: {output_path}")
+        if not os.path.exists(output_path):
+            ds.to_netcdf(output_path)
+            print(f"saved to: {output_path}")
+        else:
+            print(f"file already exists: {output_path}, skipping.")
 
 #%%
 # ---------------------------------------

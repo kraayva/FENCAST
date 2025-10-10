@@ -126,7 +126,7 @@ cnn_tuning:
     min: 0.01
     max: 0.2
     log_scale: true
-  n_conv_layers: 2
+  n_conv_layers: 3
   filters:
     type: int
     min: 16
@@ -147,3 +147,4 @@ features:
 mlwp_names: ['pangu']
 
 mlwp_timedelta: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39]
+mlwp_timedelta_plot: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39]
