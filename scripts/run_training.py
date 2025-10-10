@@ -27,11 +27,20 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
         params (dict): A dictionary containing all necessary hyperparameters for the model.
         study_dir (Path): Directory where the study results and model checkpoints will be saved.
     """
-    # 1. SETUP
+    # 1. SETUP & VALIDATION
     # =================================================================================
-    logger.info("--- 1. Setting up experiment ---")
+    logger.info("--- 1. Setting up experiment and validating parameters ---")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
+    
+    # Validate essential parameters
+    required_params = ['lr', 'activation_name', 'dropout_rate']
+    missing_params = [p for p in required_params if p not in params]
+    if missing_params:
+        logger.error(f"Missing required parameters: {missing_params}")
+        raise ValueError(f"Missing required parameters: {missing_params}")
+    
+    logger.info(f"Training parameters validated: {json.dumps({k: v for k, v in params.items() if k in required_params + ['optimizer_name', 'weight_decay', 'scheduler_name']}, indent=2)}")
 
     # 2. DATA LOADING
     # =================================================================================
@@ -70,19 +79,33 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
         model = DynamicCNN(**model_args).to(device)
     
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
+    # Create optimizer based on configuration 
+    optimizer_name = params.get('optimizer_name', 'Adam')
+    if optimizer_name == 'AdamW':
+        weight_decay = params.get('weight_decay', 0.0)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=params['lr'], weight_decay=weight_decay)
+        logger.info(f"Using optimizer: {optimizer_name} with weight_decay={weight_decay:.2e}")
+    else:  # Default to Adam
+        optimizer = torch.optim.Adam(model.parameters(), lr=params['lr'])
+        logger.info(f"Using optimizer: {optimizer_name}")
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min',
-        factor=0.2,      # Reduce LR by a factor of 0.2
-        patience=3,      # 3 epochs with no improvement before reducing LR
-    )
+    # Create scheduler based on configuration
+    scheduler = None
+    if params.get('scheduler_name') == 'ReduceLROnPlateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 
+            mode='min',
+            factor=params.get('scheduler_factor', 0.2),
+            patience=params.get('scheduler_patience', 3)
+        )
+        logger.info(f"Using ReduceLROnPlateau scheduler with factor={params.get('scheduler_factor', 0.2)}, patience={params.get('scheduler_patience', 3)}")
 
     # 4. TRAINING LOOP
     # =================================================================================
     logger.info("--- 4. Starting training ---")
-    epochs = config.get('training', {}).get('final_epochs', 30)
+    # Get epochs from config with fallback hierarchy
+    epochs = config.get('tuning', {}).get('epochs', config.get('training', {}).get('final_epochs', 50))
+    logger.info(f"Training for {epochs} epochs")
     best_validation_loss = float('inf')
     
     # Make model save path unique to the model type
@@ -131,7 +154,8 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
         avg_validation_loss = np.mean(validation_losses)
 
         # Update the learning rate scheduler with the new validation loss
-        scheduler.step(avg_validation_loss)
+        if scheduler:
+            scheduler.step(avg_validation_loss)
 
         # Save the best model checkpoint
         if avg_validation_loss < best_validation_loss:
@@ -192,18 +216,22 @@ if __name__ == '__main__':
         logger.error(f"Failed to load study: {e}")
         raise
 
-    # Reconstruct architectural parameters from the Optuna trial format
-    final_params = {
-        "learning_rate": params["lr"],
-        "activation_name": params["activation"],
-        "dropout_rate": params["dropout"]
-    }
-
-    if args.model_type == 'ffnn':
-        final_params["hidden_layers"] = [params[f"n_units_l{i}"] for i in range(params["n_layers"])]
-    elif args.model_type == 'cnn':
-        final_params["out_channels"] = [params[f"n_filters_l{i}"] for i in range(params["n_conv_layers"])]
-        final_params["kernel_size"] = params["kernel_size"]
+    # Use parameters directly from the study
+    final_params = dict(params)  # Create a copy
+    
+    # Handle any missing required parameters with defaults
+    if 'lr' not in final_params:
+        final_params['lr'] = 1e-3
+        logger.warning("No learning rate found, using default 1e-3")
+    if 'activation_name' not in final_params:
+        final_params['activation_name'] = 'ELU'
+        logger.warning("No activation found, using default ELU")
+    
+    # Handle legacy parameter names if they exist
+    if 'learning_rate' in final_params and 'lr' not in final_params:
+        final_params['lr'] = final_params['learning_rate']
+    if 'activation' in final_params and 'activation_name' not in final_params:
+        final_params['activation_name'] = final_params['activation']
 
     logger.info(f"Final training hyperparameters:\n{json.dumps(final_params, indent=4)}")
 
