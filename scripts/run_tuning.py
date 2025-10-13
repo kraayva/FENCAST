@@ -126,8 +126,7 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         if 'filters' in params and 'n_conv_layers' in params:
             n_filters = params['filters']
             n_layers = params['n_conv_layers']
-            out_channels = [n_filters] * n_layers
-            params['out_channels'] = out_channels
+            params['out_channels'] = [n_filters] * n_layers
             logger.info(f"Created {n_layers} conv layers with {n_filters} filters each")
             # Remove the individual filter parameter as it's now in out_channels
             del params['filters']

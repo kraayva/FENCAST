@@ -105,6 +105,7 @@ class DynamicCNN(nn.Module):
             current_input_size = layer_size
             
         dense_layers.append(nn.Linear(current_input_size, output_size))
+        dense_layers.append(nn.Sigmoid())
         self.regression_head = nn.Sequential(*dense_layers)
 
     def forward(self, x_spatial: torch.Tensor, x_temporal: torch.Tensor) -> torch.Tensor:
