@@ -86,15 +86,67 @@ def load_energy_prediction_data(study_dir: Path) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
+def load_energy_prediction_data_per_region(study_dir: Path) -> pd.DataFrame:
+    """
+    Loads per-region energy prediction RMSE data from MLWP evaluation results.
+    
+    Returns:
+        DataFrame with columns: ['mlwp_model', 'timedelta_days', 'region', 'rmse']
+    """
+    eval_dir = study_dir / "mlwp_evaluation"
+    metric_files = list(eval_dir.glob('**/metrics_*.json'))
+    
+    if not metric_files:
+        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
+        return pd.DataFrame()
+        
+    results = []
+    for f in metric_files:
+        mlwp_name = f.parent.name
+        timedelta_str = f.stem.replace('metrics_', '')  # Get 'td03', 'td07', etc.
+        with open(f, 'r') as fp:
+            data = json.load(fp)
+            if data['rmse'] is not None and 'region_metrics' in data:
+                # Try to get forecast lead time from saved metrics first
+                if 'forecast_lead_time_days' in data:
+                    actual_lead_time_days = data['forecast_lead_time_days']
+                else:
+                    # Try to get actual forecast lead time from MLWP files
+                    try:
+                        from fencast.utils.tools import get_mlwp_forecast_lead_time
+                        # Use any variable to get the forecast lead time (all should be the same)
+                        actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+                    except Exception:
+                        # Fallback: extract number from filename and convert
+                        td_num = int(timedelta_str.replace('td', ''))
+                        actual_lead_time_days = (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
+                
+                # Add per-region results
+                for region, region_data in data['region_metrics'].items():
+                    results.append({
+                        'mlwp_model': mlwp_name,
+                        'timedelta_days': actual_lead_time_days,
+                        'region': region,
+                        'rmse': region_data['rmse']
+                    })
+    
+    return pd.DataFrame(results)
+
+
 class MLWPPlotter:
     """
     Flexible plotting class for MLWP evaluation results.
     """
     
-    def __init__(self, config: dict, study_dir: Path):
+    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu'):
         self.config = config
         self.study_dir = study_dir
-        self.energy_data = load_energy_prediction_data(study_dir)
+        self.per_region = per_region
+        self.mlwp_name = mlwp_name
+        if per_region:
+            self.energy_data = load_energy_prediction_data_per_region(study_dir)
+        else:
+            self.energy_data = load_energy_prediction_data(study_dir)
         self.weather_data = pd.DataFrame()
         
     def load_weather_data(self, weather_rmse_file: Path):
@@ -119,7 +171,7 @@ class MLWPPlotter:
             show_weather_variables: Whether to show individual weather variable RMSE
             persistence_lead_times: List of lead times for persistence (default: 1-20)
             figsize: Figure size tuple
-            save_path: Path to save the plot (default: study_dir/mlwp_evaluation_plot.png)
+            save_path: Path to save the plot (default: 
         """
         if self.energy_data.empty:
             logger.error("No energy prediction data available for plotting")
@@ -158,40 +210,191 @@ class MLWPPlotter:
             lines1, labels1 = ax1.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
             ax1.legend(lines1 + lines2, labels1 + labels2, 
-                      loc='center left', bbox_to_anchor=(1.1, 0.5), fontsize=10)
+                      loc='center left', bbox_to_anchor=(1.1, 0.5), fontsize=8)
             
             plt.title(f'Energy vs Weather Prediction Performance\\n(Study: {self.study_dir.name})', fontsize=14)
             
         else:
             # Single-axis plot for energy predictions only
-            plt.figure(figsize=(12, 7))
-            
-            # Plot energy predictions
-            self._plot_energy_predictions(plt.gca())
-            
-            # Plot baselines
-            self._plot_baselines(plt.gca(), show_persistence, show_climatology, persistence_lead_times)
-            
-            plt.title(f'CNN Performance on MLWP Forecasts vs. Lead Time\\n(Study: {self.study_dir.name})')
-            plt.xlabel('Forecast Lead Time (Days)')
-            plt.ylabel('Energy Prediction RMSE')
-            plt.legend()
+            if self.per_region:
+                # Create two subplots for different region groups with shared y-axis
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), sharey=True)
+                
+                # Define region groups
+                group1_regions = {'DE2', 'DE1', 'DEC', 'DEB', 'DE7', 'DEG', 'DED'}
+                group2_regions = {'DE3', 'DE4', 'DE6', 'DE8', 'DE9', 'DEA', 'DEE', 'DEF'}
+                
+                # Plot Group 1 (Southern/Central regions)
+                self._plot_energy_predictions(ax1, region_filter=group1_regions)
+                self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times, region_filter=group1_regions)
+                ax1.set_title('Southern & Central German States')
+                ax1.set_xlabel('Forecast Lead Time (Days)')
+                ax1.set_ylabel('Energy Prediction RMSE')
+                
+                # Plot Group 2 (Northern/Eastern regions)
+                self._plot_energy_predictions(ax2, region_filter=group2_regions)
+                self._plot_baselines(ax2, show_persistence, show_climatology, persistence_lead_times, region_filter=group2_regions)
+                ax2.set_title('Northern & Eastern German States')
+                ax2.set_xlabel('Forecast Lead Time (Days)')
+                ax2.set_ylabel('Energy Prediction RMSE')
+                
+                # Set same x-ticks for both plots
+                x_ticks = sorted(self.energy_data['timedelta_days'].unique())
+                ax1.set_xticks(x_ticks)
+                ax2.set_xticks(x_ticks)
+                
+                # Create a single shared legend for all main regions
+                self._create_shared_legend(fig, ax1, ax2)
+                
+                plt.suptitle('Predicted CF RMSE from MLWP Forecasts vs. Lead Time (Per Region)', fontsize=16)
+                plt.tight_layout()
+                
+            else:
+                # Original single plot
+                plt.figure(figsize=(12, 7))
+                
+                # Plot energy predictions
+                self._plot_energy_predictions(plt.gca())
+                
+                # Plot baselines
+                self._plot_baselines(plt.gca(), show_persistence, show_climatology, persistence_lead_times)
+                
+                plt.title(f'Predicted CF RMSE from MLWP Forecasts RMSE vs. Lead Time')
+                plt.xlabel('Forecast Lead Time (Days)')
+                plt.ylabel('Energy Prediction RMSE')
+                
+                # Handle legend positioning based on number of entries
+                handles, labels = plt.gca().get_legend_handles_labels()
+                if len(handles) > 10:  # Many entries, place outside
+                    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+                else:
+                    plt.legend()
         
-        plt.xticks(self.energy_data['timedelta_days'].unique())
-        plt.tight_layout()
+        if not self.per_region:
+            plt.xticks(self.energy_data['timedelta_days'].unique())
+            
+            # Use subplots_adjust for better control, especially with many legend entries
+            if len(self.energy_data['region'].unique() if 'region' in self.energy_data.columns else []) > 3:
+                plt.subplots_adjust(right=0.75)  # Make room for legend
+            else:
+                plt.tight_layout()
         
         # Save the plot
         if save_path is None:
-            save_path = self.study_dir / "mlwp_evaluation_plot.png"
+            # Choose suffix based on plotting mode
+            suffix = "regions" if self.per_region else "mean"
+            filename = f"{self.mlwp_name}_cf_rmse_{suffix}.png"
+            save_path = self.study_dir / filename
         plt.savefig(save_path)
         logger.info(f"Plot saved to: {save_path}")
         
-    def _plot_energy_predictions(self, ax):
+    def _get_region_color_and_name(self, region_code):
+        """Get color and main region name based on region code."""
+        # Extract main region code (first 3 characters)
+        main_region = region_code[:3]
+        
+        # Define color mapping for main regions
+        region_colors = {
+            'DE1': '#FFD700',      # Yellow - Baden-Württemberg
+            'DE2': '#FF69B4',      # Pink - Bayern
+            'DE3': '#B22222',      # Brick-red - Berlin
+            'DE4': '#87CEEB',      # Light blue - Brandenburg
+            'DE6': '#006400',      # Dark-green - Hamburg
+            'DE7': '#0000FF',      # Blue - Hessen
+            'DE8': '#FFFF00',      # Yellow - Mecklenburg-Vorpommern (lighter than DE1)
+            'DE9': '#FFB6C1',      # Light red - Niedersachsen
+            'DEA': '#008000',      # Green - Nordrhein-Westfalen
+            'DEB': '#FF4500',      # Dark orange - Rheinland-Pfalz
+            'DEC': '#FFA500',      # Orange - Saarland
+            'DED': '#8B4513',      # Brown - Sachsen
+            'DEE': '#90EE90',      # Light green - Sachsen-Anhalt
+            'DEF': '#808080',      # Grey - Schleswig-Holstein
+            'DEG': '#9ACD32'       # Yellow-green - Thüringen
+        }
+        
+        region_names = {
+            'DE1': 'Baden-Württemberg',
+            'DE2': 'Bayern',
+            'DE3': 'Berlin',
+            'DE4': 'Brandenburg',
+            'DE6': 'Hamburg',
+            'DE7': 'Hessen',
+            'DE8': 'Mecklenburg-Vorpommern',
+            'DE9': 'Niedersachsen',
+            'DEA': 'Nordrhein-Westfalen',
+            'DEB': 'Rheinland-Pfalz',
+            'DEC': 'Saarland',
+            'DED': 'Sachsen',
+            'DEE': 'Sachsen-Anhalt',
+            'DEF': 'Schleswig-Holstein',
+            'DEG': 'Thüringen'
+        }
+        
+        return region_colors.get(main_region, '#000000'), region_names.get(main_region, main_region)
+
+    def _create_shared_legend(self, fig, ax1, ax2):
+        """Create a single shared legend containing all main region names."""
+        import matplotlib.patches as mpatches
+        
+        # Get all main regions that appear in the data
+        all_regions = set()
+        if 'region' in self.energy_data.columns:
+            for region in self.energy_data['region'].unique():
+                all_regions.add(region[:3])
+        
+        # Create legend entries for all main regions
+        legend_elements = []
+        for main_region in sorted(all_regions):
+            color, region_name = self._get_region_color_and_name(main_region + '00')  # Dummy full code
+            legend_elements.append(mpatches.Patch(color=color, label=region_name))
+        
+        # Add climatology baseline if it's shown
+        handles1, labels1 = ax1.get_legend_handles_labels()
+        handles2, labels2 = ax2.get_legend_handles_labels()
+        
+        # Check for climatology baseline in either plot
+        for handle, label in zip(handles1 + handles2, labels1 + labels2):
+            if 'Climatology' in label:
+                legend_elements.append(handle)
+                break
+        
+        # Create the shared legend positioned in the center
+        fig.legend(handles=legend_elements, 
+                  loc='center',
+                  bbox_to_anchor=(0.4, 0.2),
+                  ncol=2,
+                  fontsize=10)
+
+    def _plot_energy_predictions(self, ax, region_filter=None):
         """Plot energy prediction RMSE lines."""
-        for mlwp in self.energy_data['mlwp_model'].unique():
-            data_subset = self.energy_data[self.energy_data['mlwp_model'] == mlwp]
-            ax.plot(data_subset['timedelta_days'], data_subset['rmse'], 
-                   marker='o', linewidth=2.5, label=f'{mlwp} (Energy Prediction)')
+        if self.per_region:
+            # Plot one line per region for each MLWP model
+            main_regions_labeled = set()  # Track which main regions have been labeled
+            
+            for mlwp in self.energy_data['mlwp_model'].unique():
+                mlwp_data = self.energy_data[self.energy_data['mlwp_model'] == mlwp]
+                
+                for region in mlwp_data['region'].unique():
+                    main_region_code = region[:3]
+                    
+                    # Apply region filter if specified
+                    if region_filter is not None and main_region_code not in region_filter:
+                        continue
+                    
+                    region_data = mlwp_data[mlwp_data['region'] == region]
+                    color, main_region_name = self._get_region_color_and_name(region)
+                    
+                    # Don't create individual labels since we'll use a shared legend
+                    label = None
+                    
+                    ax.plot(region_data['timedelta_days'], region_data['rmse'], 
+                           marker='o', linewidth=2, color=color, label=label)
+        else:
+            # Original behavior: one line per MLWP model (averaged across regions)
+            for mlwp in self.energy_data['mlwp_model'].unique():
+                data_subset = self.energy_data[self.energy_data['mlwp_model'] == mlwp]
+                ax.plot(data_subset['timedelta_days'], data_subset['rmse'], 
+                       marker='o', linewidth=2.5, label=f'Solar CF predicted from {mlwp}')
     
     def _plot_weather_predictions(self, ax, show_total: bool, show_variables: bool):
         """Plot weather prediction RMSE lines."""
@@ -219,18 +422,71 @@ class MLWPPlotter:
                            marker='', linewidth=1.5, linestyle=linestyle, alpha=0.6,
                            color=color, label=f'{mlwp} ({var_name})')
     
-    def _plot_baselines(self, ax, show_persistence: bool, show_climatology: bool, persistence_lead_times: List[int]):
+    def _plot_baselines(self, ax, show_persistence: bool, show_climatology: bool, persistence_lead_times: List[int], region_filter=None):
         """Plot baseline comparisons."""
         if show_persistence:
-            logger.info("\\n=== Calculating Persistence Baselines ===")
-            persistence_rmse_values = []
-            for td in persistence_lead_times:
-                persistence_rmse = calculate_persistence_baseline(self.config, td, logger)
-                persistence_rmse_values.append(persistence_rmse)
+            logger.info("\n=== Calculating Persistence Baselines ===")
             
-            ax.plot(persistence_lead_times, persistence_rmse_values, 
-                   color='red', linestyle=':', alpha=0.7, linewidth=2, 
-                   label="Persistence Baseline")
+            # Load data for persistence calculation
+            import pandas as pd
+            from fencast.utils.paths import PROJECT_ROOT, PROCESSED_DATA_DIR
+            
+            setup_name = self.config.get('setup_name', 'default_setup')
+            
+            # Load the same processed data as the persistence script for consistency
+            labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+            if not labels_file.exists():
+                # Try FFNN labels if CNN labels don't exist
+                labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+                
+            if not labels_file.exists():
+                # Fallback to raw data if processed data doesn't exist
+                logger.warning("Processed labels not found, falling back to raw target data")
+                gt_file = PROJECT_ROOT / self.config['target_data_raw']
+                full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
+                full_df.index = full_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
+                
+                # Drop columns to match the model's target
+                drop_cols = self.config.get('data_processing', {}).get('drop_columns', [])
+                if drop_cols:
+                    full_df = full_df.drop(columns=drop_cols, errors='ignore')
+            else:
+                # Use processed data (same as persistence script)
+                logger.info(f"Using processed data from: {labels_file}")
+                full_df = pd.read_parquet(labels_file)
+                
+            # Filter for the test set years
+            test_years = self.config['split_years']['test']
+            test_gt = full_df[full_df.index.year.isin(test_years)].dropna()
+            
+            if self.per_region:
+                # Calculate persistence baseline per-region efficiently
+                regions_to_plot = []
+                for region in test_gt.columns:
+                    main_region_code = region[:3]
+                    if region_filter is None or main_region_code in region_filter:
+                        regions_to_plot.append(region)
+                
+                colors = plt.cm.Set3(np.linspace(0, 1, len(regions_to_plot)))  # Different colormap for baselines
+                for i, region in enumerate(regions_to_plot):
+                    # Calculate persistence for this region for all lead times at once
+                    region_data = test_gt[[region]]
+                    # Use None logger to reduce verbosity for per-region calculations
+                    region_persistence_results = calculate_persistence_baseline(region_data, persistence_lead_times, None)
+                    region_persistence_values = [region_persistence_results[td]['rmse'] for td in persistence_lead_times]
+                    
+                    ax.plot(persistence_lead_times, region_persistence_values, 
+                           color=colors[i], linestyle=':', alpha=0.7, linewidth=1.5, 
+                           marker='s', markersize=3, markerfacecolor=colors[i], markeredgecolor=colors[i])
+            else:
+                # Calculate persistence baselines for all lead times at once
+                persistence_results = calculate_persistence_baseline(test_gt, persistence_lead_times, logger)
+                persistence_rmse_values = [persistence_results[td]['rmse'] for td in persistence_lead_times]
+                
+                ax.plot(persistence_lead_times, persistence_rmse_values, 
+                       color='red', linestyle=':', alpha=0.7, linewidth=2, 
+                       marker='s', markersize=4, markerfacecolor='red', markeredgecolor='red',
+                       label="Persistence Baseline")
         
         if show_climatology:
             climatology_rmse = calculate_climatology_baseline(self.config)
@@ -247,7 +503,9 @@ def create_mlwp_plot(config_name: str,
                      show_weather_total: bool = True,
                      show_weather_variables: bool = False,
                      persistence_lead_times: Optional[List[int]] = None,
-                     figsize: tuple = (16, 8)) -> None:
+                     figsize: tuple = (16, 8),
+                     per_region: bool = False,
+                     mlwp_name: str = 'pangu') -> None:
     """
     High-level function to create MLWP evaluation plots.
     
@@ -278,7 +536,7 @@ def create_mlwp_plot(config_name: str,
         return
 
     # Create plotter instance
-    plotter = MLWPPlotter(config, study_dir)
+    plotter = MLWPPlotter(config, study_dir, per_region=per_region, mlwp_name=mlwp_name)
     
     # Load weather data if provided
     if weather_rmse_file:

@@ -25,21 +25,23 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 
 def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
-    """Loads and merges a specific MLWP forecast dataset."""
-    feature_prefix = f"{mlwp_name}_{timedelta}_de"
+    """Loads and merges a specific MLWP forecast dataset using the existing tools function."""
+    from fencast.utils.tools import load_mlwp_data
+    
     feature_var_names = config['feature_var_names']
+    logger.info(f"Loading MLWP data for {mlwp_name} {timedelta}...")
     
-    feature_files = [RAW_DATA_DIR / f'{feature_prefix}_{var}.nc' for var in feature_var_names.keys()]
-    logger.info(f"Loading MLWP data with prefix '{feature_prefix}'...")
+    # Load each variable using the existing load_mlwp_data function
+    datasets = []
+    for var_name in feature_var_names.keys():
+        try:
+            ds = load_mlwp_data(mlwp_name, timedelta, var_name)
+            datasets.append(ds)
+        except FileNotFoundError as e:
+            logger.error(f"Missing MLWP data file for variable {var_name}: {e}")
+            raise FileNotFoundError(f"Required MLWP data files not found for {mlwp_name} at {timedelta}.")
     
-    missing_files = [f for f in feature_files if not f.exists()]
-    if missing_files:
-        logger.error(f"Missing {len(missing_files)} required MLWP data files:")
-        for f in missing_files:
-            logger.error(f"  - {f}")
-        raise FileNotFoundError(f"Required MLWP data files not found for {mlwp_name} at {timedelta}.")
-            
-    datasets = [xr.open_dataset(f) for f in feature_files]
+    # Merge all variables and rename according to config
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
     return weather_data
@@ -138,8 +140,21 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
             logger.warning("All aligned rows contained NaN values. Cannot calculate metrics.")
             metrics = {'rmse': None, 'mae': None, 'sample_count': 0}
         else:
+            # Calculate overall metrics
             rmse = np.sqrt(mean_squared_error(clean_gt, clean_preds))
             mae = mean_absolute_error(clean_gt, clean_preds)
+            
+            # Calculate per-region metrics
+            region_metrics = {}
+            for region in clean_gt.columns:
+                if region in clean_preds.columns:
+                    region_rmse = np.sqrt(mean_squared_error(clean_gt[region], clean_preds[region]))
+                    region_mae = mean_absolute_error(clean_gt[region], clean_preds[region])
+                    region_metrics[region] = {
+                        'rmse': region_rmse,
+                        'mae': region_mae,
+                        'sample_count': len(clean_gt[region].dropna())
+                    }
             
             # Get actual forecast lead time from MLWP file
             try:
@@ -155,7 +170,8 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
                 'mae': mae, 
                 'sample_count': len(clean_gt),
                 'forecast_lead_time_days': actual_lead_time_days,
-                'forecast_lead_time_hours': actual_lead_time_days * 24
+                'forecast_lead_time_hours': actual_lead_time_days * 24,
+                'region_metrics': region_metrics
             }
             logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}, Lead time = {actual_lead_time_days:.2f} days")
 
@@ -203,7 +219,7 @@ def main():
         logger.info(f"Using model from study: {study_dir.name}")
         
         model_path = study_dir / "best_model.pth"
-        checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+        checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
         model = DynamicCNN(**checkpoint['model_args'])
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()

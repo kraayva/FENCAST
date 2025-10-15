@@ -36,10 +36,15 @@ def main():
                        help='Disable total weather RMSE')
     parser.add_argument('--show-weather-variables', action='store_true',
                        help='Show individual weather variable RMSE')
+    parser.add_argument('--per-region', action='store_true',
+                       help='Show one line per region instead of overall average')
+    parser.add_argument('--mlwp-name', '-n', default='pangu',
+                       help='MLWP model name for filename and data loading (default: pangu)')
     
     # Baseline options
     parser.add_argument('--persistence-lead-times', nargs='+', type=int,
-                       help='Custom lead times for persistence baseline')
+                          default=list(range(1, 11)),  
+                       help='Custom lead times for persistence baseline (default: 1-10 days)')
     
     # Plot formatting
     parser.add_argument('--figsize', nargs=2, type=float, default=[16, 8],
@@ -51,6 +56,12 @@ def main():
     logger = setup_logger("mlwp_plot")
     logger.info(f"Creating MLWP plot for study: {args.study_name}")
     
+    # Automatically disable persistence for per-region plots to reduce clutter
+    show_persistence = not args.no_persistence and not args.per_region
+    
+    if args.per_region and not args.no_persistence:
+        logger.info("Automatically disabling persistence baseline for per-region view to reduce plot clutter")
+    
     # Create the plot
     try:
         create_mlwp_plot(
@@ -58,12 +69,14 @@ def main():
             model_type=args.model_type,
             study_name=args.study_name,
             weather_rmse_file=args.weather_rmse_file,
-            show_persistence=not args.no_persistence,
+            show_persistence=show_persistence,
             show_climatology=not args.no_climatology,
             show_weather_total=not args.no_weather_total,
             show_weather_variables=args.show_weather_variables,
             persistence_lead_times=args.persistence_lead_times,
-            figsize=tuple(args.figsize)
+            figsize=tuple(args.figsize),
+            per_region=args.per_region,
+            mlwp_name=args.mlwp_name
         )
         logger.info("MLWP plot creation completed successfully")
         

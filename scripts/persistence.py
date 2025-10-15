@@ -19,89 +19,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, PROJECT_ROOT
-from fencast.utils.tools import setup_logger
+from fencast.utils.tools import setup_logger, calculate_persistence_baseline
 
 
-def calculate_persistence_baseline(data: pd.DataFrame, lead_times: List[int], 
-                                 logger=None) -> Dict[int, Dict[str, float]]:
-    """
-    Calculate persistence baseline for different lead times.
-    
-    The persistence model assumes that the capacity factor at time t+lt equals
-    the capacity factor at time t, where lt is the lead time in days.
-    
-    Args:
-        data: DataFrame with datetime index and capacity factor columns
-        lead_times: List of lead times in days (e.g., [1, 2, 3, 7, 14])
-        logger: Optional logger instance
-        
-    Returns:
-        Dictionary with lead times as keys and metrics as values:
-        {lead_time: {'mse': float, 'rmse': float, 'mae': float, 'samples': int}}
-    """
-    if logger:
-        logger.info(f"Calculating persistence baseline for lead times: {lead_times}")
-    
-    results = {}
-    
-    # Ensure data is sorted by datetime
-    data = data.sort_index()
-    
-    for lt in lead_times:
-        if logger:
-            logger.info(f"Processing lead time: {lt} days")
-        
-        # Calculate target time: 12:00 + lt * 24h
-        target_times = []
-        persistence_values = []
-        actual_values = []
-        
-        for current_time in data.index:
-            # Target time is current_time + lead_time_days
-            target_time = current_time + timedelta(days=lt)
-            
-            # Check if target time exists in data
-            if target_time in data.index:
-                # Persistence prediction: use current values
-                persistence_pred = data.loc[current_time].values  # All regions
-                actual_target = data.loc[target_time].values      # All regions
-                
-                target_times.append(target_time)
-                persistence_values.append(persistence_pred)
-                actual_values.append(actual_target)
-        
-        if len(target_times) == 0:
-            if logger:
-                logger.warning(f"No valid target times found for lead time {lt} days")
-            results[lt] = {
-                'mse': np.nan,
-                'rmse': np.nan, 
-                'mae': np.nan,
-                'samples': 0
-            }
-            continue
-        
-        # Convert to arrays for calculation
-        persistence_array = np.array(persistence_values)  # Shape: (n_samples, n_regions)
-        actual_array = np.array(actual_values)           # Shape: (n_samples, n_regions)
-        
-        # Calculate metrics across all samples and regions
-        mse = np.mean((persistence_array - actual_array) ** 2)
-        rmse = np.sqrt(mse)
-        mae = np.mean(np.abs(persistence_array - actual_array))
-        n_samples = len(target_times)
-        
-        results[lt] = {
-            'mse': mse,
-            'rmse': rmse,
-            'mae': mae,
-            'samples': n_samples
-        }
-        
-        if logger:
-            logger.info(f"Lead time {lt}d: RMSE={rmse:.6f}, MSE={mse:.6f}, MAE={mae:.6f}, Samples={n_samples}")
-    
-    return results
+# calculate_persistence_baseline is now imported from fencast.utils.tools
 
 
 def calculate_persistence_by_region(data: pd.DataFrame, lead_times: List[int],

@@ -153,55 +153,98 @@ def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dat
         raise e
 
 
-def calculate_persistence_baseline(config: dict, timedelta_days: int, logger=None) -> float:
-    """Calculates persistence baseline RMSE for a specific forecast lead time."""
+def calculate_persistence_baseline(data, lead_times, logger=None):
+    """
+    Calculate persistence baseline for different lead times.
+    
+    The persistence model assumes that the capacity factor at time t+lt equals
+    the capacity factor at time t, where lt is the lead time in days.
+    
+    Args:
+        data: DataFrame with datetime index and capacity factor columns
+        lead_times: Single lead time (int) or list of lead times in days
+        logger: Optional logger instance
+        
+    Returns:
+        Single float (if lead_times is int) or dict with lead times as keys and metrics as values:
+        {lead_time: {'mse': float, 'rmse': float, 'mae': float, 'samples': int}}
+    """
+    from datetime import timedelta
     import pandas as pd
     import numpy as np
-    from sklearn.metrics import mean_squared_error
-    from fencast.utils.paths import PROJECT_ROOT
     
-    # Load the full raw target dataset
-    gt_file = PROJECT_ROOT / config['target_data_raw']
-    full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    full_df.index = full_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
-    
-    # Drop columns to match the model's target
-    drop_cols = config.get('data_processing', {}).get('drop_columns', [])
-    if drop_cols:
-        full_df = full_df.drop(columns=drop_cols, errors='ignore')
-        
-    # Filter for the test set years
-    test_years = config['split_years']['test']
-    test_gt = full_df[full_df.index.year.isin(test_years)].dropna()
-    
-    # Persistence baseline: use data from `timedelta_days` days ago
-    persistence_preds = test_gt.shift(timedelta_days)
-    
-    # Find valid overlapping data
-    valid_mask = ~(test_gt.isna().any(axis=1) | persistence_preds.isna().any(axis=1))
-    valid_gt = test_gt[valid_mask]
-    valid_preds = persistence_preds[valid_mask]
-    
-    if len(valid_gt) > 0:
-        rmse = np.sqrt(mean_squared_error(valid_gt, valid_preds))
-        
-        # Debug logging if logger provided
-        if logger and timedelta_days <= 20:
-            logger.info(f"Persistence {timedelta_days}d: RMSE={rmse:.4f}, samples={len(valid_gt)}, "
-                       f"date_range={valid_gt.index.min().strftime('%Y-%m-%d')} to {valid_gt.index.max().strftime('%Y-%m-%d')}")
-            
-            # Check for weekly patterns
-            if timedelta_days in [7, 14]:
-                gt_dow = valid_gt.index.dayofweek
-                pred_dow = valid_preds.index.dayofweek
-                same_dow_ratio = (gt_dow == pred_dow).mean()
-                logger.info(f"  Same day-of-week ratio: {same_dow_ratio:.3f} (1.0 = always same weekday)")
-        
-        return rmse
+    # Handle single lead time input
+    if isinstance(lead_times, int):
+        single_lead_time = lead_times
+        lead_times = [single_lead_time]
+        return_single = True
     else:
+        return_single = False
+    
+    if logger:
+        logger.info(f"Calculating persistence baseline for lead times: {lead_times}")
+    
+    results = {}
+    data = data.sort_index()
+    
+    for lt in lead_times:
         if logger:
-            logger.warning(f"No valid data for persistence baseline at {timedelta_days} days")
-        return np.nan
+            logger.info(f"Processing lead time: {lt} days")
+        
+        # Calculate target time: current_time + lt days
+        persistence_values = []
+        actual_values = []
+        
+        for current_time in data.index:
+            # Target time is current_time + lead_time_days
+            target_time = current_time + timedelta(days=lt)
+            
+            # Check if target time exists in data
+            if target_time in data.index:
+                # Persistence prediction: use current values
+                persistence_pred = data.loc[current_time].values  # All regions
+                actual_target = data.loc[target_time].values      # All regions
+                
+                persistence_values.append(persistence_pred)
+                actual_values.append(actual_target)
+        
+        if len(persistence_values) == 0:
+            if logger:
+                logger.warning(f"No valid target times found for lead time {lt} days")
+            results[lt] = {
+                'mse': np.nan,
+                'rmse': np.nan, 
+                'mae': np.nan,
+                'samples': 0
+            }
+            continue
+        
+        # Convert to arrays for calculation
+        persistence_array = np.array(persistence_values)  # Shape: (n_samples, n_regions)
+        actual_array = np.array(actual_values)           # Shape: (n_samples, n_regions)
+        
+        # Calculate metrics across all samples and regions
+        mse = np.mean((persistence_array - actual_array) ** 2)
+        rmse = np.sqrt(mse)
+        mae = np.mean(np.abs(persistence_array - actual_array))
+        n_samples = len(persistence_values)
+        
+        results[lt] = {
+            'mse': mse,
+            'rmse': rmse,
+            'mae': mae,
+            'samples': n_samples
+        }
+        
+        if logger:
+            logger.info(f"Lead time {lt}d: RMSE={rmse:.6f}, MSE={mse:.6f}, MAE={mae:.6f}, Samples={n_samples}")
+    
+    # Return single float for backward compatibility with MLWP analysis
+    if return_single:
+        single_lt = list(results.keys())[0]
+        return results[single_lt]['rmse']
+    
+    return results
 
 
 def calculate_climatology_baseline(config: dict) -> float:
