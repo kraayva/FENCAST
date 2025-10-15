@@ -172,9 +172,23 @@ def calculate_total_rmse(result_row: dict, feature_var_names: dict, feature_leve
         return np.nan
 
 
-def calculate_mlwp_weather_rmse(config: dict, output_file: str) -> pd.DataFrame:
+def calculate_mlwp_weather_rmse(config: dict, output_file: str, 
+                              mlwp_models: List[str] = None,
+                              timedeltas: List[int] = None,
+                              max_years: int = None,
+                              variables: List[str] = None,
+                              pressure_levels: List[int] = None) -> pd.DataFrame:
     """
     Main function to calculate RMSE between MLWP predictions and ERA5 reference data.
+    
+    Args:
+        config: Configuration dictionary
+        output_file: Path to save results CSV
+        mlwp_models: List of MLWP model names (uses config default if None)
+        timedeltas: List of forecast lead times (uses config default if None)
+        max_years: Maximum years to process (not used currently, for future optimization)
+        variables: List of variables to evaluate (uses config default if None)
+        pressure_levels: List of pressure levels (uses config default if None)
     
     Returns:
         DataFrame: Results with RMSE metrics for all variables and timedeltas
@@ -183,10 +197,30 @@ def calculate_mlwp_weather_rmse(config: dict, output_file: str) -> pd.DataFrame:
     
     setup_name = config.get('setup_name', 'default_setup')
     
-    # Get experiment parameters
-    mlwp_names = config.get('mlwp_names', [])
-    mlwp_timedeltas = config.get('mlwp_timedelta', [])
+    # Get experiment parameters (use provided args or config defaults)
+    mlwp_names = mlwp_models or config.get('mlwp_names', [])
+    mlwp_timedeltas = timedeltas or config.get('mlwp_timedelta', [])
     feature_var_names = config.get('feature_var_names', {})
+    
+    # Override config variables if provided
+    if variables:
+        # Map short variable names to full names
+        var_name_mapping = {
+            't': 'temperature',
+            'q': 'specific_humidity', 
+            'u': 'u_component_of_wind',
+            'v': 'v_component_of_wind',
+            'z': 'geopotential'
+        }
+        
+        # Create feature_var_names dict with full variable names
+        feature_var_names = {}
+        for var in variables:
+            full_name = var_name_mapping.get(var, var)  # Use mapping or original if not found
+            feature_var_names[full_name] = var  # full_name -> short_name mapping
+    
+    # Override config pressure levels if provided
+    feature_levels = pressure_levels or config.get('feature_level', [])
     
     if not mlwp_names or not mlwp_timedeltas:
         logger.error("Config keys 'mlwp_names' or 'mlwp_timedelta' are missing or empty.")
@@ -246,7 +280,7 @@ def calculate_mlwp_weather_rmse(config: dict, output_file: str) -> pd.DataFrame:
                 except FileNotFoundError as e:
                     logger.error(f"Skipping {var_name} for {mlwp_name} {td_str}: {e}")
                     # Add NaN values for missing data
-                    for level in config.get('feature_level', []):
+                    for level in feature_levels:
                         result_row[f"{var_name}_{level}hPa"] = np.nan
                     # Add NaN for variable average
                     result_row[f"{var_name}_avg_rmse"] = np.nan
@@ -254,17 +288,17 @@ def calculate_mlwp_weather_rmse(config: dict, output_file: str) -> pd.DataFrame:
                 except Exception as e:
                     logger.error(f"Error processing {var_name} for {mlwp_name} {td_str}: {e}")
                     # Add NaN values for error cases
-                    for level in config.get('feature_level', []):
+                    for level in feature_levels:
                         result_row[f"{var_name}_{level}hPa"] = np.nan
                     # Add NaN for variable average
                     result_row[f"{var_name}_avg_rmse"] = np.nan
             
             # Calculate variable-level RMSE (averaged across height levels)
-            variable_rmse = calculate_variable_rmse_summary(result_row, feature_var_names, config.get('feature_level', []))
+            variable_rmse = calculate_variable_rmse_summary(result_row, feature_var_names, feature_levels)
             result_row.update(variable_rmse)
             
             # Calculate total RMSE across all variables and levels
-            total_rmse = calculate_total_rmse(result_row, feature_var_names, config.get('feature_level', []))
+            total_rmse = calculate_total_rmse(result_row, feature_var_names, feature_levels)
             result_row['total_rmse'] = total_rmse
             
             all_results.append(result_row)

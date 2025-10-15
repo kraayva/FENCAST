@@ -27,7 +27,7 @@ def main():
                        default=['pangu'],
                        help='MLWP model names to evaluate')
     parser.add_argument('--timedeltas', nargs='+', type=int,
-                       default=[0, 1, 2, 3, 5, 8, 14],
+                       default=[0, 1, 2, 3, 5, 6, 7, 10, 14],
                        help='Forecast lead times in days')
     parser.add_argument('--max-years', type=int, default=5,
                        help='Maximum number of years to process for efficiency')

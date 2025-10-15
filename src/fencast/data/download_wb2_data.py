@@ -80,7 +80,7 @@ new_ds_pangu = (
          longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
     [cfm["feature_variables"].keys()]
     .sel(level=cfm["feature_level"])
-    .sel(time=ds_pangu['time'].dt.hour == 0)
+    .sel(time=ds_pangu['time'].dt.hour == 12)
 )
 
 # create dataset dictionary

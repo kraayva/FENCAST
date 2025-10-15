@@ -76,35 +76,81 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
 
 
 def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: str) -> float:
-    """Get the actual forecast lead time in days from MLWP file."""
+    """Get the actual forecast lead time in days from consolidated MLWP file."""
     import numpy as np
     import xarray as xr
     from fencast.utils.paths import RAW_DATA_DIR
     
-    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_{timedelta_str}_de_{var_name}.nc"
+    # New consolidated file structure: one file per variable with all timedeltas
+    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
     if not mlwp_file.exists():
         raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
     
+    # Extract timedelta index from string (e.g., "td03" -> 3)
+    td_index = int(timedelta_str.replace('td', '').lstrip('0') or '0')
+    
     ds = xr.open_dataset(mlwp_file)
     try:
-        # Extract prediction_timedelta (single value) and convert to days
-        timedelta_ns = ds['prediction_timedelta'].values
-        timedelta_days = float(timedelta_ns / np.timedelta64(1, 'D'))
-        return timedelta_days
+        # Convert to timedelta for selection
+        target_timedelta = np.timedelta64(td_index, 'D')
+        
+        # Find the specific timedelta in the array
+        prediction_timedeltas = ds['prediction_timedelta'].values
+        
+        # Check if our target timedelta exists
+        if target_timedelta in prediction_timedeltas:
+            return float(target_timedelta / np.timedelta64(1, 'D'))
+        else:
+            # Fallback: return the td_index directly (should be the same)
+            available_days = [float(td / np.timedelta64(1, 'D')) for td in prediction_timedeltas]
+            if td_index in available_days:
+                return float(td_index)
+            else:
+                raise ValueError(f"Timedelta {td_index} days not found. Available: {available_days}")
     finally:
         ds.close()
 
 
 def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dataset':
-    """Loads MLWP prediction data for a specific variable and timedelta."""
+    """Loads MLWP prediction data for a specific variable and timedelta from consolidated file."""
     import xarray as xr
+    import numpy as np
     from fencast.utils.paths import RAW_DATA_DIR
     
-    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_{timedelta_str}_de_{var_name}.nc"
+    # New consolidated file structure: one file per variable with all timedeltas
+    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
     if not mlwp_file.exists():
         raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
     
-    return xr.open_dataset(mlwp_file)
+    # Load the full dataset
+    ds = xr.open_dataset(mlwp_file)
+    
+    # Extract timedelta index from string (e.g., "td03" -> 3)
+    td_index = int(timedelta_str.replace('td', '').lstrip('0') or '0')
+    
+    # Convert to days for selection (td_index corresponds to days: td03 = 3 days)
+    target_timedelta = np.timedelta64(td_index, 'D')
+    
+    try:
+        # Select the specific timedelta from the consolidated file
+        selected_ds = ds.sel(prediction_timedelta=target_timedelta)
+        
+        # Check if prediction_timedelta dimension still exists and remove it
+        # This maintains compatibility with existing code that expects no timedelta dimension
+        if 'prediction_timedelta' in selected_ds.dims:
+            selected_ds = selected_ds.squeeze('prediction_timedelta', drop=True)
+        
+        return selected_ds
+        
+    except KeyError as e:
+        ds.close()
+        available_tds = ds.prediction_timedelta.values
+        available_days = [float(td / np.timedelta64(1, 'D')) for td in available_tds]
+        raise ValueError(f"Timedelta {td_index} days not found in {mlwp_file}. "
+                        f"Available timedeltas: {available_days} days") from e
+    except Exception as e:
+        ds.close()
+        raise e
 
 
 def calculate_persistence_baseline(config: dict, timedelta_days: int, logger=None) -> float:
