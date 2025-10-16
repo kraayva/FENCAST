@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 
 from fencast.utils.tools import setup_logger
-from fencast.visualization import create_mlwp_plot
+from fencast.visualization import create_mlwp_plot, create_mlwp_seasonal_plot, create_mlwp_rmse_mae_plot
 
 
 def main():
@@ -38,6 +38,10 @@ def main():
                        help='Show individual weather variable RMSE')
     parser.add_argument('--per-region', action='store_true',
                        help='Show one line per region instead of overall average')
+    parser.add_argument('--seasonal', action='store_true',
+                       help='Create seasonal analysis plot (Winter/Spring/Summer/Autumn)')
+    parser.add_argument('--rmse-mae', action='store_true',
+                       help='Create RMSE vs MAE comparison plot')
     parser.add_argument('--mlwp-name', '-n', default='pangu',
                        help='MLWP model name for filename and data loading (default: pangu)')
     
@@ -62,23 +66,46 @@ def main():
     if args.per_region and not args.no_persistence:
         logger.info("Automatically disabling persistence baseline for per-region view to reduce plot clutter")
     
-    # Create the plot
+    # Create the appropriate plot
     try:
-        create_mlwp_plot(
-            config_name=args.config,
-            model_type=args.model_type,
-            study_name=args.study_name,
-            weather_rmse_file=args.weather_rmse_file,
-            show_persistence=show_persistence,
-            show_climatology=not args.no_climatology,
-            show_weather_total=not args.no_weather_total,
-            show_weather_variables=args.show_weather_variables,
-            persistence_lead_times=args.persistence_lead_times,
-            figsize=tuple(args.figsize),
-            per_region=args.per_region,
-            mlwp_name=args.mlwp_name
-        )
-        logger.info("MLWP plot creation completed successfully")
+        if args.seasonal:
+            # Create seasonal plot
+            create_mlwp_seasonal_plot(
+                config_name=args.config,
+                model_type=args.model_type,
+                study_name=args.study_name,
+                persistence_lead_times=args.persistence_lead_times,
+                figsize=tuple(args.figsize),
+                mlwp_name=args.mlwp_name
+            )
+            logger.info("MLWP seasonal plot creation completed successfully")
+        elif args.rmse_mae:
+            # Create RMSE vs MAE plot
+            create_mlwp_rmse_mae_plot(
+                config_name=args.config,
+                model_type=args.model_type,
+                study_name=args.study_name,
+                figsize=tuple(args.figsize),
+                mlwp_name=args.mlwp_name
+            )
+            logger.info("MLWP RMSE vs MAE plot creation completed successfully")
+        else:
+            # Create regular plot
+            create_mlwp_plot(
+                config_name=args.config,
+                model_type=args.model_type,
+                study_name=args.study_name,
+                weather_rmse_file=args.weather_rmse_file,
+                show_persistence=show_persistence,
+                show_climatology=not args.no_climatology,
+                show_weather_total=not args.no_weather_total,
+                show_weather_variables=args.show_weather_variables,
+                persistence_lead_times=args.persistence_lead_times,
+                figsize=tuple(args.figsize),
+                per_region=args.per_region,
+                mlwp_name=args.mlwp_name
+            )
+            logger.info("MLWP plot creation completed successfully")
         
     except Exception as e:
         logger.error(f"Error during plot creation: {e}")

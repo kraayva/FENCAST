@@ -201,7 +201,7 @@ class MLWPPlotter:
             
             # Customize axes
             ax1.set_xlabel('Forecast Lead Time (Days)', fontsize=12)
-            ax1.set_ylabel('Energy Prediction RMSE (Capacity Factor)', fontsize=12, color='blue')
+            ax1.set_ylabel('Solar Capacity Factor RMSE', fontsize=12, color='blue')
             ax2.set_ylabel('Weather Prediction RMSE (Normalized)', fontsize=12, color='red')
             ax1.tick_params(axis='y', labelcolor='blue')
             ax2.tick_params(axis='y', labelcolor='red')
@@ -229,14 +229,14 @@ class MLWPPlotter:
                 self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times, region_filter=group1_regions)
                 ax1.set_title('Southern & Central German States')
                 ax1.set_xlabel('Forecast Lead Time (Days)')
-                ax1.set_ylabel('Energy Prediction RMSE')
+                ax1.set_ylabel('Solar Capacity Factor RMSE')
                 
                 # Plot Group 2 (Northern/Eastern regions)
                 self._plot_energy_predictions(ax2, region_filter=group2_regions)
                 self._plot_baselines(ax2, show_persistence, show_climatology, persistence_lead_times, region_filter=group2_regions)
                 ax2.set_title('Northern & Eastern German States')
                 ax2.set_xlabel('Forecast Lead Time (Days)')
-                ax2.set_ylabel('Energy Prediction RMSE')
+                ax2.set_ylabel('Solar Capacity Factor RMSE')
                 
                 # Set same x-ticks for both plots
                 x_ticks = sorted(self.energy_data['timedelta_days'].unique())
@@ -259,10 +259,10 @@ class MLWPPlotter:
                 # Plot baselines
                 self._plot_baselines(plt.gca(), show_persistence, show_climatology, persistence_lead_times)
                 
-                plt.title(f'Predicted CF RMSE from MLWP Forecasts RMSE vs. Lead Time')
+                plt.title(f'Predicted CF RMSE from MLWP Forecasts vs. Lead Time')
                 plt.xlabel('Forecast Lead Time (Days)')
-                plt.ylabel('Energy Prediction RMSE')
-                
+                plt.ylabel('Solar Capacity Factor RMSE')
+
                 # Handle legend positioning based on number of entries
                 handles, labels = plt.gca().get_legend_handles_labels()
                 if len(handles) > 10:  # Many entries, place outside
@@ -492,6 +492,404 @@ class MLWPPlotter:
             climatology_rmse = calculate_climatology_baseline(self.config)
             ax.axhline(climatology_rmse, color='green', linestyle=':', alpha=0.7,
                       label=f"Climatology Baseline ({climatology_rmse:.4f})")
+
+
+def load_energy_prediction_data_seasonal(study_dir: Path, config: dict) -> pd.DataFrame:
+    """
+    Loads energy prediction RMSE data with seasonal breakdown computed from predictions and ground truth.
+    
+    Returns:
+        DataFrame with columns: ['mlwp_model', 'timedelta_days', 'season', 'rmse']
+    """
+    eval_dir = study_dir / "mlwp_evaluation"
+    metric_files = list(eval_dir.glob('**/metrics_*.json'))
+    
+    if not metric_files:
+        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
+        return pd.DataFrame()
+    
+    # Load ground truth data
+    from fencast.utils.paths import PROCESSED_DATA_DIR, PROJECT_ROOT
+    setup_name = config.get('setup_name', 'default_setup')
+    
+    # Try to load processed labels
+    labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+    if not labels_file.exists():
+        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+        
+    if not labels_file.exists():
+        # Fallback to raw data
+        gt_file = PROJECT_ROOT / config['target_data_raw']
+        gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
+        gt_df.index = gt_df.index + pd.Timedelta(hours=12)
+        drop_cols = config.get('data_processing', {}).get('drop_columns', [])
+        if drop_cols:
+            gt_df = gt_df.drop(columns=drop_cols, errors='ignore')
+    else:
+        gt_df = pd.read_parquet(labels_file)
+    
+    # Filter for test years
+    test_years = config['split_years']['test']
+    gt_df = gt_df[gt_df.index.year.isin(test_years)].dropna()
+    
+    # Add season mapping
+    gt_df = gt_df.copy()
+    gt_df['season'] = gt_df.index.month.map({
+        12: 'Winter', 1: 'Winter', 2: 'Winter',
+        3: 'Spring', 4: 'Spring', 5: 'Spring', 
+        6: 'Summer', 7: 'Summer', 8: 'Summer',
+        9: 'Autumn', 10: 'Autumn', 11: 'Autumn'
+    })
+    
+    results = []
+    for f in metric_files:
+        mlwp_name = f.parent.name
+        timedelta_str = f.stem.replace('metrics_', '')
+        
+        # Load predictions
+        pred_file = f.parent / f"predictions_{timedelta_str}.csv"
+        if not pred_file.exists():
+            continue
+            
+        pred_df = pd.read_csv(pred_file, index_col=0, parse_dates=True)
+        
+        # Get forecast lead time
+        with open(f, 'r') as fp:
+            data = json.load(fp)
+            if 'forecast_lead_time_days' in data:
+                actual_lead_time_days = data['forecast_lead_time_days']
+            else:
+                try:
+                    from fencast.utils.tools import get_mlwp_forecast_lead_time
+                    actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+                except Exception:
+                    td_num = int(timedelta_str.replace('td', ''))
+                    actual_lead_time_days = (td_num + 1) * 6 / 24
+        
+        # Align predictions with ground truth
+        common_indices = pred_df.index.intersection(gt_df.index)
+        pred_aligned = pred_df.loc[common_indices]
+        gt_aligned = gt_df.loc[common_indices]
+        
+        # Calculate seasonal RMSE (mean across all regions)
+        for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
+            season_mask = gt_aligned['season'] == season
+            if season_mask.sum() == 0:
+                continue
+                
+            # Get seasonal data
+            gt_season = gt_aligned[season_mask].drop(columns=['season'])
+            pred_season = pred_aligned[season_mask]
+            
+            # Align columns (both should have same region columns)
+            common_cols = gt_season.columns.intersection(pred_season.columns)
+            if len(common_cols) == 0:
+                continue
+                
+            gt_values = gt_season[common_cols].values.flatten()
+            pred_values = pred_season[common_cols].values.flatten()
+            
+            # Calculate RMSE
+            valid_mask = ~(np.isnan(gt_values) | np.isnan(pred_values))
+            if np.sum(valid_mask) > 0:
+                seasonal_rmse = np.sqrt(np.mean((gt_values[valid_mask] - pred_values[valid_mask]) ** 2))
+                
+                results.append({
+                    'mlwp_model': mlwp_name,
+                    'timedelta_days': actual_lead_time_days,
+                    'season': season,
+                    'rmse': seasonal_rmse
+                })
+    
+    return pd.DataFrame(results)
+
+
+def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times: List[int], logger=None) -> pd.DataFrame:
+    """Calculate persistence baseline RMSE for each season."""
+    import pandas as pd
+    from fencast.utils.paths import PROJECT_ROOT, PROCESSED_DATA_DIR
+    
+    setup_name = config.get('setup_name', 'default_setup')
+    
+    # Load processed data
+    labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+    if not labels_file.exists():
+        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+        
+    if not labels_file.exists():
+        # Fallback to raw data
+        gt_file = PROJECT_ROOT / config['target_data_raw']
+        full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
+        full_df.index = full_df.index + pd.Timedelta(hours=12)
+        drop_cols = config.get('data_processing', {}).get('drop_columns', [])
+        if drop_cols:
+            full_df = full_df.drop(columns=drop_cols, errors='ignore')
+    else:
+        full_df = pd.read_parquet(labels_file)
+    
+    # Filter for test years
+    test_years = config['split_years']['test']
+    test_gt = full_df[full_df.index.year.isin(test_years)].dropna()
+    
+    # Add season column
+    test_gt = test_gt.copy()
+    test_gt['season'] = test_gt.index.month.map({
+        12: 'Winter', 1: 'Winter', 2: 'Winter',
+        3: 'Spring', 4: 'Spring', 5: 'Spring', 
+        6: 'Summer', 7: 'Summer', 8: 'Summer',
+        9: 'Autumn', 10: 'Autumn', 11: 'Autumn'
+    })
+    
+    results = []
+    for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
+        season_data = test_gt[test_gt['season'] == season].drop(columns=['season'])
+        if len(season_data) > 0:
+            persistence_results = calculate_persistence_baseline(season_data, persistence_lead_times, None)
+            for td in persistence_lead_times:
+                results.append({
+                    'timedelta_days': td,
+                    'season': season,
+                    'rmse': persistence_results[td]['rmse']
+                })
+    
+    return pd.DataFrame(results)
+
+
+class MLWPSeasonalPlotter:
+    """Plotting class for seasonal MLWP evaluation results."""
+    
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu'):
+        self.config = config
+        self.study_dir = study_dir
+        self.mlwp_name = mlwp_name
+        self.energy_data = load_energy_prediction_data_seasonal(study_dir, config)
+        
+    def plot_seasonal_results(self, 
+                             persistence_lead_times: Optional[List[int]] = None,
+                             figsize: tuple = (16, 8),
+                             save_path: Optional[Path] = None) -> None:
+        """Create seasonal MLWP evaluation plot."""
+        
+        if self.energy_data.empty:
+            logger.error("No seasonal energy prediction data available for plotting")
+            return
+        
+        # Set default persistence lead times
+        if persistence_lead_times is None:
+            max_timedelta = max(self.energy_data['timedelta_days'].max(), 20)
+            persistence_lead_times = list(range(1, int(max_timedelta) + 1))
+        
+        # Calculate seasonal persistence baselines
+        logger.info("=== Calculating Seasonal Persistence Baselines ===")
+        persistence_data = calculate_seasonal_persistence_baseline(self.config, persistence_lead_times, logger)
+        
+        # Generate the plot
+        sns.set_theme(style="whitegrid")
+        plt.figure(figsize=figsize)
+        
+        # Define season colors
+        season_colors = {
+            'Winter': '#1f77b4',    # Blue
+            'Spring': '#2ca02c',    # Green  
+            'Summer': '#ff7f0e',    # Orange
+            'Autumn': '#d62728'     # Red
+        }
+        
+        # Plot model predictions by season
+        for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
+            season_data = self.energy_data[self.energy_data['season'] == season]
+            if not season_data.empty:
+                plt.plot(season_data['timedelta_days'], season_data['rmse'], 
+                        marker='o', linewidth=2.5, color=season_colors[season],
+                        label=f'{season} (Model)')
+        
+        # Plot persistence baselines by season
+        for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
+            season_pers = persistence_data[persistence_data['season'] == season]
+            if not season_pers.empty:
+                plt.plot(season_pers['timedelta_days'], season_pers['rmse'], 
+                        marker='s', linewidth=2, linestyle=':', alpha=0.7,
+                        color=season_colors[season], label=f'{season} (Persistence)')
+        
+        plt.title(f'Seasonal Performance: {self.mlwp_name.upper()} Model vs Persistence Baseline')
+        plt.xlabel('Forecast Lead Time (Days)')
+        plt.ylabel('Solar Capacity Factor RMSE')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        
+        # Set x-ticks
+        plt.xticks(sorted(self.energy_data['timedelta_days'].unique()))
+        plt.tight_layout()
+        
+        # Save plot
+        if save_path is None:
+            filename = f"{self.mlwp_name}_cf_rmse_seasonal.png"
+            save_path = self.study_dir / filename
+        plt.savefig(save_path)
+        logger.info(f"Seasonal plot saved to: {save_path}")
+
+
+def create_mlwp_seasonal_plot(config_name: str, 
+                             model_type: str, 
+                             study_name: str, 
+                             persistence_lead_times: Optional[List[int]] = None,
+                             figsize: tuple = (16, 8),
+                             mlwp_name: str = 'pangu') -> None:
+    """Create MLWP seasonal evaluation plot."""
+    logger.info(f"--- Creating MLWP Seasonal Plot for study '{study_name}' ---")
+    
+    config = load_config(config_name)
+    setup_name = config.get('setup_name', 'default_setup')
+    
+    # Find study directory
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
+    try:
+        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
+        logger.info(f"Loading results from: {study_dir}")
+    except FileNotFoundError as e:
+        logger.error(e)
+        return
+
+    # Create seasonal plotter
+    plotter = MLWPSeasonalPlotter(config, study_dir, mlwp_name=mlwp_name)
+    
+    # Create the plot
+    plotter.plot_seasonal_results(
+        persistence_lead_times=persistence_lead_times,
+        figsize=figsize
+    )
+
+
+def load_energy_prediction_rmse_mae_data(study_dir: Path) -> pd.DataFrame:
+    """
+    Loads both RMSE and MAE data from MLWP evaluation results.
+    
+    Returns:
+        DataFrame with columns: ['mlwp_model', 'timedelta_days', 'metric_type', 'value']
+    """
+    eval_dir = study_dir / "mlwp_evaluation"
+    metric_files = list(eval_dir.glob('**/metrics_*.json'))
+    
+    if not metric_files:
+        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
+        return pd.DataFrame()
+    
+    results = []
+    for f in metric_files:
+        mlwp_name = f.parent.name
+        timedelta_str = f.stem.replace('metrics_', '')
+        
+        with open(f, 'r') as fp:
+            data = json.load(fp)
+        
+        # Get forecast lead time
+        if 'forecast_lead_time_days' in data:
+            actual_lead_time_days = data['forecast_lead_time_days']
+        else:
+            try:
+                from fencast.utils.tools import get_mlwp_forecast_lead_time
+                actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+            except Exception:
+                td_num = int(timedelta_str.replace('td', ''))
+                actual_lead_time_days = (td_num + 1) * 6 / 24
+        
+        # Extract RMSE and MAE
+        rmse = data.get('rmse', 0.0)
+        mae = data.get('mae', 0.0)
+        
+        results.extend([
+            {
+                'mlwp_model': mlwp_name,
+                'timedelta_days': actual_lead_time_days,
+                'metric_type': 'RMSE',
+                'value': rmse
+            },
+            {
+                'mlwp_model': mlwp_name,
+                'timedelta_days': actual_lead_time_days,
+                'metric_type': 'MAE',
+                'value': mae
+            }
+        ])
+    
+    return pd.DataFrame(results)
+
+
+class MLWPRmseMaePlotter:
+    """Plotting class for RMSE vs MAE comparison."""
+    
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu'):
+        self.config = config
+        self.study_dir = study_dir
+        self.mlwp_name = mlwp_name
+        self.data = load_energy_prediction_rmse_mae_data(study_dir)
+        
+    def plot_rmse_mae_comparison(self, 
+                                figsize: tuple = (16, 8),
+                                save_path: Optional[Path] = None) -> None:
+        """Create RMSE vs MAE comparison plot."""
+        
+        if self.data.empty:
+            logger.error("No RMSE/MAE data available for plotting")
+            return
+        
+        # Generate the plot
+        sns.set_theme(style="whitegrid")
+        plt.figure(figsize=figsize)
+        
+        # Get data for each metric
+        rmse_data = self.data[self.data['metric_type'] == 'RMSE']
+        mae_data = self.data[self.data['metric_type'] == 'MAE']
+        
+        # Plot RMSE and MAE
+        plt.plot(rmse_data['timedelta_days'], rmse_data['value'], 
+                marker='o', linewidth=2.5, color='#1f77b4', label='RMSE')
+        plt.plot(mae_data['timedelta_days'], mae_data['value'], 
+                marker='s', linewidth=2.5, color='#ff7f0e', label='MAE')
+        
+        plt.title(f'Model Performance Comparison: {self.mlwp_name.upper()} RMSE vs MAE')
+        plt.xlabel('Forecast Lead Time (Days)')
+        plt.ylabel('Solar Capacity Factor Error')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Set x-ticks
+        plt.xticks(sorted(rmse_data['timedelta_days'].unique()))
+        plt.tight_layout()
+        
+        # Save plot
+        if save_path is None:
+            filename = f"{self.mlwp_name}_cf_rmse_mae.png"
+            save_path = self.study_dir / filename
+        plt.savefig(save_path)
+        logger.info(f"RMSE vs MAE plot saved to: {save_path}")
+
+
+def create_mlwp_rmse_mae_plot(config_name: str, 
+                             model_type: str, 
+                             study_name: str, 
+                             figsize: tuple = (16, 8),
+                             mlwp_name: str = 'pangu') -> None:
+    """Create MLWP RMSE vs MAE comparison plot."""
+    logger.info(f"--- Creating MLWP RMSE vs MAE Plot for study '{study_name}' ---")
+    
+    config = load_config(config_name)
+    setup_name = config.get('setup_name', 'default_setup')
+    
+    # Find study directory
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
+    try:
+        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
+        logger.info(f"Loading results from: {study_dir}")
+    except FileNotFoundError as e:
+        logger.error(e)
+        return
+
+    # Create RMSE vs MAE plotter
+    plotter = MLWPRmseMaePlotter(config, study_dir, mlwp_name=mlwp_name)
+    
+    # Create the plot
+    plotter.plot_rmse_mae_comparison(figsize=figsize)
 
 
 def create_mlwp_plot(config_name: str, 
