@@ -1,5 +1,10 @@
 # FENCAST: Fine-tuning ENergy predictions from weather foreCASTs
 
+> 🚧 **UNDER HEAVY CONSTRUCTION** 🚧
+>
+> This project is currently in a very early stage of development.
+> Many features are not yet implemented and the existing code is subject to major changes.
+
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 A machine learning project to predict solar power capacity factors (CF) for German NUTS-2 regions using ERA5 weather reanalysis data.

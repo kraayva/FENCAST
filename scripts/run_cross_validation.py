@@ -80,15 +80,22 @@ class KFoldCrossValidator:
         
         # Create K-fold splits
         fold_splits = []
-        years_per_fold = len(all_available_years) // self.k_folds
+        remainder_years = len(all_available_years) % self.k_folds
+        # Remove remainder years from the end to ensure equal fold sizes
+        usable_years = all_available_years[:-remainder_years] if remainder_years > 0 else all_available_years
+        years_per_fold = len(usable_years) // self.k_folds
+        
+        if self.logger and remainder_years > 0:
+            excluded_years = all_available_years[-remainder_years:]
+            self.logger.info(f"Excluding {remainder_years} years for equal fold sizes: {excluded_years}")
         
         for fold in range(self.k_folds):
             # Calculate validation years for this fold
             val_start_idx = fold * years_per_fold
-            val_end_idx = (fold + 1) * years_per_fold if fold < self.k_folds - 1 else len(all_available_years)
+            val_end_idx = (fold + 1) * years_per_fold
             
-            val_years = all_available_years[val_start_idx:val_end_idx]
-            train_years = [year for year in all_available_years if year not in val_years]
+            val_years = usable_years[val_start_idx:val_end_idx]
+            train_years = [year for year in usable_years if year not in val_years]
             
             fold_splits.append((train_years, val_years))
             
