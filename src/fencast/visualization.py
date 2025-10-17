@@ -42,14 +42,14 @@ def load_weather_rmse_data(weather_rmse_file: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def load_energy_prediction_data(study_dir: Path) -> pd.DataFrame:
+def load_energy_prediction_data(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
     """
     Loads energy prediction RMSE data from MLWP evaluation results.
     
     Returns:
         DataFrame with energy prediction RMSE by timedelta
     """
-    eval_dir = study_dir / "mlwp_evaluation"
+    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
     metric_files = list(eval_dir.glob('**/metrics_*.json'))
     
     if not metric_files:
@@ -86,14 +86,14 @@ def load_energy_prediction_data(study_dir: Path) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def load_energy_prediction_data_per_region(study_dir: Path) -> pd.DataFrame:
+def load_energy_prediction_data_per_region(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
     """
     Loads per-region energy prediction RMSE data from MLWP evaluation results.
     
     Returns:
         DataFrame with columns: ['mlwp_model', 'timedelta_days', 'region', 'rmse']
     """
-    eval_dir = study_dir / "mlwp_evaluation"
+    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
     metric_files = list(eval_dir.glob('**/metrics_*.json'))
     
     if not metric_files:
@@ -138,15 +138,16 @@ class MLWPPlotter:
     Flexible plotting class for MLWP evaluation results.
     """
     
-    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu'):
+    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu', final_model: bool = False):
         self.config = config
         self.study_dir = study_dir
         self.per_region = per_region
         self.mlwp_name = mlwp_name
+        self.final_model = final_model
         if per_region:
-            self.energy_data = load_energy_prediction_data_per_region(study_dir)
+            self.energy_data = load_energy_prediction_data_per_region(study_dir, final_model)
         else:
-            self.energy_data = load_energy_prediction_data(study_dir)
+            self.energy_data = load_energy_prediction_data(study_dir, final_model)
         self.weather_data = pd.DataFrame()
         
     def load_weather_data(self, weather_rmse_file: Path):
@@ -284,7 +285,10 @@ class MLWPPlotter:
             # Choose suffix based on plotting mode
             suffix = "regions" if self.per_region else "mean"
             filename = f"{self.mlwp_name}_cf_rmse_{suffix}.png"
-            save_path = self.study_dir / filename
+            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            plot_dir = self.study_dir / model_subdir
+            plot_dir.mkdir(exist_ok=True)
+            save_path = plot_dir / filename
         plt.savefig(save_path)
         logger.info(f"Plot saved to: {save_path}")
         
@@ -494,14 +498,14 @@ class MLWPPlotter:
                       label=f"Climatology Baseline ({climatology_rmse:.4f})")
 
 
-def load_energy_prediction_data_seasonal(study_dir: Path, config: dict) -> pd.DataFrame:
+def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, final_model: bool = False) -> pd.DataFrame:
     """
     Loads energy prediction RMSE data with seasonal breakdown computed from predictions and ground truth.
     
     Returns:
         DataFrame with columns: ['mlwp_model', 'timedelta_days', 'season', 'rmse']
     """
-    eval_dir = study_dir / "mlwp_evaluation"
+    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
     metric_files = list(eval_dir.glob('**/metrics_*.json'))
     
     if not metric_files:
@@ -658,11 +662,12 @@ def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times
 class MLWPSeasonalPlotter:
     """Plotting class for seasonal MLWP evaluation results."""
     
-    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu'):
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', final_model: bool = False):
         self.config = config
         self.study_dir = study_dir
         self.mlwp_name = mlwp_name
-        self.energy_data = load_energy_prediction_data_seasonal(study_dir, config)
+        self.final_model = final_model
+        self.energy_data = load_energy_prediction_data_seasonal(study_dir, config, final_model)
         
     def plot_seasonal_results(self, 
                              persistence_lead_times: Optional[List[int]] = None,
@@ -724,7 +729,10 @@ class MLWPSeasonalPlotter:
         # Save plot
         if save_path is None:
             filename = f"{self.mlwp_name}_cf_rmse_seasonal.png"
-            save_path = self.study_dir / filename
+            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            plot_dir = self.study_dir / model_subdir
+            plot_dir.mkdir(exist_ok=True)
+            save_path = plot_dir / filename
         plt.savefig(save_path)
         logger.info(f"Seasonal plot saved to: {save_path}")
 
@@ -734,7 +742,8 @@ def create_mlwp_seasonal_plot(config_name: str,
                              study_name: str, 
                              persistence_lead_times: Optional[List[int]] = None,
                              figsize: tuple = (16, 8),
-                             mlwp_name: str = 'pangu') -> None:
+                             mlwp_name: str = 'pangu',
+                             final_model: bool = False) -> None:
     """Create MLWP seasonal evaluation plot."""
     logger.info(f"--- Creating MLWP Seasonal Plot for study '{study_name}' ---")
     
@@ -751,7 +760,7 @@ def create_mlwp_seasonal_plot(config_name: str,
         return
 
     # Create seasonal plotter
-    plotter = MLWPSeasonalPlotter(config, study_dir, mlwp_name=mlwp_name)
+    plotter = MLWPSeasonalPlotter(config, study_dir, mlwp_name=mlwp_name, final_model=final_model)
     
     # Create the plot
     plotter.plot_seasonal_results(
@@ -760,14 +769,14 @@ def create_mlwp_seasonal_plot(config_name: str,
     )
 
 
-def load_energy_prediction_rmse_mae_data(study_dir: Path) -> pd.DataFrame:
+def load_energy_prediction_rmse_mae_data(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
     """
-    Loads both RMSE and MAE data from MLWP evaluation results.
+    Loads RMSE and MAE data from MLWP evaluation results.
     
     Returns:
-        DataFrame with columns: ['mlwp_model', 'timedelta_days', 'metric_type', 'value']
+        DataFrame with columns: ['mlwp_model', 'timedelta_days', 'rmse', 'mae']
     """
-    eval_dir = study_dir / "mlwp_evaluation"
+    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
     metric_files = list(eval_dir.glob('**/metrics_*.json'))
     
     if not metric_files:
@@ -818,11 +827,12 @@ def load_energy_prediction_rmse_mae_data(study_dir: Path) -> pd.DataFrame:
 class MLWPRmseMaePlotter:
     """Plotting class for RMSE vs MAE comparison."""
     
-    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu'):
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', final_model: bool = False):
         self.config = config
         self.study_dir = study_dir
         self.mlwp_name = mlwp_name
-        self.data = load_energy_prediction_rmse_mae_data(study_dir)
+        self.final_model = final_model
+        self.data = load_energy_prediction_rmse_mae_data(study_dir, final_model)
         
     def plot_rmse_mae_comparison(self, 
                                 figsize: tuple = (16, 8),
@@ -860,7 +870,10 @@ class MLWPRmseMaePlotter:
         # Save plot
         if save_path is None:
             filename = f"{self.mlwp_name}_cf_rmse_mae.png"
-            save_path = self.study_dir / filename
+            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            plot_dir = self.study_dir / model_subdir
+            plot_dir.mkdir(exist_ok=True)
+            save_path = plot_dir / filename
         plt.savefig(save_path)
         logger.info(f"RMSE vs MAE plot saved to: {save_path}")
 
@@ -869,7 +882,8 @@ def create_mlwp_rmse_mae_plot(config_name: str,
                              model_type: str, 
                              study_name: str, 
                              figsize: tuple = (16, 8),
-                             mlwp_name: str = 'pangu') -> None:
+                             mlwp_name: str = 'pangu',
+                             final_model: bool = False) -> None:
     """Create MLWP RMSE vs MAE comparison plot."""
     logger.info(f"--- Creating MLWP RMSE vs MAE Plot for study '{study_name}' ---")
     
@@ -886,7 +900,7 @@ def create_mlwp_rmse_mae_plot(config_name: str,
         return
 
     # Create RMSE vs MAE plotter
-    plotter = MLWPRmseMaePlotter(config, study_dir, mlwp_name=mlwp_name)
+    plotter = MLWPRmseMaePlotter(config, study_dir, mlwp_name=mlwp_name, final_model=final_model)
     
     # Create the plot
     plotter.plot_rmse_mae_comparison(figsize=figsize)
@@ -903,7 +917,8 @@ def create_mlwp_plot(config_name: str,
                      persistence_lead_times: Optional[List[int]] = None,
                      figsize: tuple = (16, 8),
                      per_region: bool = False,
-                     mlwp_name: str = 'pangu') -> None:
+                     mlwp_name: str = 'pangu',
+                     final_model: bool = False) -> None:
     """
     High-level function to create MLWP evaluation plots.
     
@@ -934,7 +949,7 @@ def create_mlwp_plot(config_name: str,
         return
 
     # Create plotter instance
-    plotter = MLWPPlotter(config, study_dir, per_region=per_region, mlwp_name=mlwp_name)
+    plotter = MLWPPlotter(config, study_dir, per_region=per_region, mlwp_name=mlwp_name, final_model=final_model)
     
     # Load weather data if provided
     if weather_rmse_file:

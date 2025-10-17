@@ -38,8 +38,13 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path, u
         # Mode 1: Final training run on all data
         logger.info("Mode: Training on combined train + validation data.")
         
-        train_years = config['split_years']['train']
+        # Get the explicitly defined validation and test years and derive training years
         val_years = config['split_years']['validation']
+        test_years = config['split_years']['test']
+        all_possible_years = list(range(int(config['time_start'][:4]), int(config['time_end'][:4]) + 1))
+        train_years = [year for year in all_possible_years if year not in set(val_years + test_years)]
+        
+        # Now, combine the calculated train years and the validation years for the final training run
         all_training_years = sorted(train_years + val_years)
         logger.info(f"Combining data from {len(all_training_years)} years.")
 

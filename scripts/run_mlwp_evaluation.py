@@ -19,7 +19,7 @@ from pathlib import Path
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch.nn as nn
 
-from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR, RAW_DATA_DIR
+from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
 from fencast.models import DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 
@@ -48,7 +48,7 @@ def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.
 
 
 def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, study_dir: Path, 
-                          mlwp_name: str, timedelta_str: str) -> dict:
+                          mlwp_name: str, timedelta_str: str, final_model = False) -> dict:
     """
     Evaluates a trained CNN model on MLWP forecast data for a specific lead time.
     
@@ -176,7 +176,10 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
             logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}, Lead time = {actual_lead_time_days:.2f} days")
 
     # 4. SAVE RESULTS
-    output_dir = study_dir / "mlwp_evaluation" / mlwp_name
+    if final_model:
+        output_dir = study_dir / "final_model" / "mlwp_evaluation" / mlwp_name
+    else:
+        output_dir = study_dir / "best_model" / "mlwp_evaluation" / mlwp_name
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Save predictions and metrics
@@ -201,6 +204,8 @@ def main():
                        help='Specific MLWP models to evaluate (default: all from config)')
     parser.add_argument('--timedeltas', nargs='+', type=int,
                        help='Specific forecast lead times to evaluate (default: all from config)')
+    parser.add_argument('--final-model', action='store_true',
+                       help='Flag indicating to use the final model trained on all data')
     
     args = parser.parse_args()
     
@@ -218,7 +223,12 @@ def main():
         study_dir = get_latest_study_dir(results_parent_dir, model_type='cnn') if args.study_name == 'latest' else results_parent_dir / args.study_name
         logger.info(f"Using model from study: {study_dir.name}")
         
-        model_path = study_dir / "best_model.pth"
+        if args.final_model:
+            logger.info("Loading final model trained on all data...")
+            model_path = study_dir / "final_model.pth"
+        else:
+            logger.info("Loading best model from validation...")
+            model_path = study_dir / "best_model.pth"
         checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
         model = DynamicCNN(**checkpoint['model_args'])
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -244,7 +254,7 @@ def main():
             # Format timedelta string like 'td01', 'td02'
             td_str = f"td{td:02d}"
             try:
-                metrics = evaluate_model_on_mlwp(config, model, setup_name, study_dir, mlwp, td_str)
+                metrics = evaluate_model_on_mlwp(config, model, setup_name, study_dir, mlwp, td_str, final_model=args.final_model)
             except Exception as e:
                 logger.error(f"Error evaluating {mlwp} {td_str}: {e}")
                 continue

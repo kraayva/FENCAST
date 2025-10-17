@@ -152,38 +152,52 @@ class ModelTrainer:
         return train_loader, val_loader
     
     def create_custom_data_loaders(self, train_years: List[int], val_years: List[int], 
-                                 batch_size: Optional[int] = None) -> Tuple[DataLoader, DataLoader]:
+                                batch_size: Optional[int] = None) -> Tuple[DataLoader, Optional[DataLoader]]:
         """
-        Create data loaders with custom year filtering for cross validation.
-        
+        Create data loaders with custom year filtering. If val_years is empty, the validation loader will be None.
+
         Args:
-            train_years: Years to include in training dataset
-            val_years: Years to include in validation dataset
-            batch_size: Batch size (uses config default if None)
-            
+            train_years: List of years for training data
+            val_years: List of years for validation data
+            batch_size: Batch size (uses params default if None)
+
         Returns:
-            Tuple of (train_loader, val_loader)
+            Tuple of (train_loader, val_loader or None)
         """
         if batch_size is None:
-            batch_size = self.config.get('model', {}).get('batch_sizes', {}).get('training', 64)
+            batch_size = self.params.get('batch_size', 64) # Use params for batch size
             
+        # 1. Create the training dataset and loader
         train_dataset = FencastDataset(config=self.config, mode='train', model_type=self.model_type, 
-                                     apply_normalization=False, custom_years=train_years)
-        val_dataset = FencastDataset(config=self.config, mode='validation', model_type=self.model_type, 
-                                   apply_normalization=False, custom_years=val_years)
+                                    apply_normalization=False, custom_years=train_years)
         
-        # Apply normalization based on training data
-        if self.model_type == 'ffnn':
-            self._normalize_ffnn_datasets(train_dataset, val_dataset)
-        elif self.model_type == 'cnn':
-            self._normalize_cnn_datasets(train_dataset, val_dataset)
+        val_loader = None
         
+        # 2. Conditionally create the validation dataset and loader
+        if val_years: # This is True only if the list is not empty
+            val_dataset = FencastDataset(config=self.config, mode='validation', model_type=self.model_type, 
+                                        apply_normalization=False, custom_years=val_years)
+            
+            # Apply normalization to both
+            if self.model_type == 'ffnn':
+                self._normalize_ffnn_datasets(train_dataset, val_dataset)
+            elif self.model_type == 'cnn':
+                self._normalize_cnn_datasets(train_dataset, val_dataset)
+                
+            val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
+        else:
+            # If no validation set, just normalize the training set
+            if self.model_type == 'ffnn':
+                self._normalize_ffnn_datasets(train_dataset) # Pass only one argument
+            elif self.model_type == 'cnn':
+                self._normalize_cnn_datasets(train_dataset) # Pass only one argument
+
+        # 3. Create the training loader after normalization has been applied
         train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
         
         return train_loader, val_loader
     
-    def _normalize_ffnn_datasets(self, train_dataset, val_dataset):
+    def _normalize_ffnn_datasets(self, train_dataset, val_dataset = None):
         """Normalize FFNN datasets using training data statistics."""
         from sklearn.preprocessing import StandardScaler
         
@@ -194,11 +208,11 @@ class ModelTrainer:
         # Fit scaler on training data
         scaler = StandardScaler()
         train_dataset.X[normalize_columns] = scaler.fit_transform(train_dataset.X[normalize_columns])
-        val_dataset.X[normalize_columns] = scaler.transform(val_dataset.X[normalize_columns])
+        if val_dataset:
+            val_dataset.X[normalize_columns] = scaler.transform(val_dataset.X[normalize_columns])
     
-    def _normalize_cnn_datasets(self, train_dataset, val_dataset):
+    def _normalize_cnn_datasets(self, train_dataset, val_dataset = None):
         """Normalize CNN datasets using training data statistics."""
-        import numpy as np
         
         # Calculate statistics from training data
         mean = np.mean(train_dataset.X, axis=(0, 2, 3), keepdims=True)
@@ -207,7 +221,8 @@ class ModelTrainer:
         
         # Apply normalization
         train_dataset.X = (train_dataset.X - mean) / std
-        val_dataset.X = (val_dataset.X - mean) / std
+        if val_dataset:
+            val_dataset.X = (val_dataset.X - mean) / std
     
     def forward_pass(self, model: nn.Module, batch) -> torch.Tensor:
         """
