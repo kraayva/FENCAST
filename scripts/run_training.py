@@ -16,15 +16,16 @@ from fencast.training import ModelTrainer, validate_training_parameters
 
 logger = setup_logger("final_training")
 
-def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
+def run_training(config: dict, model_type: str, params: dict, study_dir: Path, use_all_data: bool = False) -> dict:
     """
-    Main function to run the final model training and validation process using a given set of hyperparameters.
+    Main function to run the model training and validation process using a given set of hyperparameters.
     
     Args:
         config (dict): The project's configuration dictionary.
         model_type (str): The model architecture to train ('ffnn' or 'cnn').
         params (dict): A dictionary containing all necessary hyperparameters for the model.
         study_dir (Path): Directory where the study results and model checkpoints will be saved.
+        use_all_data (bool): Whether to use all available data (training + validation) for training. Default is False.
     """
     logger.info("--- Starting final model training ---")
     logger.info(f"Using device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
@@ -32,16 +33,43 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path):
     # Create trainer instance
     trainer = ModelTrainer(config, model_type, params, logger)
     
-    # Create data loaders
-    train_loader, val_loader = trainer.create_data_loaders()
-    logger.info(f"Data loaders created for '{model_type}' model")
+    # Create data loaders based on the training mode
+    if use_all_data:
+        # Mode 1: Final training run on all data
+        logger.info("Mode: Training on combined train + validation data.")
+        
+        train_years = config['split_years']['train']
+        val_years = config['split_years']['validation']
+        all_training_years = sorted(train_years + val_years)
+        logger.info(f"Combining data from {len(all_training_years)} years.")
+
+        # Create loaders: all data for training, empty for validation
+        train_loader, val_loader = trainer.create_custom_data_loaders(
+            train_years=all_training_years,
+            val_years=[]
+        )
+        
+        epochs = config.get('training', {}).get('final_epochs', 50)
+        model_save_path = study_dir / "final_model.pth"
+        
+    else:
+        # Mode 2: Standard training run with separate validation
+        logger.info("Mode: Training with separate train and validation sets.")
+        
+        train_loader, val_loader = trainer.create_data_loaders()
+        
+        epochs = config.get('tuning', {}).get('epochs', 30)
+        model_save_path = study_dir / "best_model.pth"
+
+    logger.info(f"Data loaders created. Training for {epochs} epochs.")
     
-    # Get training configuration
-    epochs = config.get('tuning', {}).get('epochs', config.get('training', {}).get('final_epochs', 50))
-    model_save_path = study_dir / "best_model.pth"
-    
-    # Train the model
-    results = trainer.train_model(train_loader, val_loader, epochs, model_save_path)
+    # The train_model call is now universal, thanks to the robust ModelTrainer
+    results = trainer.train_model(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=epochs,
+        save_path=model_save_path
+    )
     
     logger.info("--- Training finished ---")
     logger.info(f"Best model validation loss: {results['best_val_loss']:.6f}")
@@ -66,6 +94,12 @@ if __name__ == '__main__':
         '--study-name', '-s',
         default='latest',
         help='Specify the study name to load params from (default: latest for the given model-type).'
+    )
+
+    parser.add_argument(
+        '--final-run',
+        action='store_true',
+        help='Flag to train on all data (train + validation) to produce a final model.'
     )
     
     args = parser.parse_args()
@@ -101,5 +135,6 @@ if __name__ == '__main__':
         config=config,
         model_type=args.model_type,
         params=final_params,
-        study_dir=study_dir
+        study_dir=study_dir,
+        use_all_data=args.final_run
     )

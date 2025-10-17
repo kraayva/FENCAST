@@ -57,21 +57,10 @@ class KFoldCrossValidator:
         """
         # Get available training years (exclude test years)
         test_years = set(self.config['split_years']['test'])
-        validation_years = set(self.config['split_years']['validation'])
         
-        # For cross validation, we'll use both training and validation years
-        # but split them differently for each fold
-        all_available_years = []
-        
-        # Determine available years from time range
-        start_year = int(self.config['time_start'][:4])
-        end_year = int(self.config['time_end'][:4])
-        
-        for year in range(start_year, end_year + 1):
-            if year not in test_years:  # Exclude test years from cross validation
-                all_available_years.append(year)
-        
-        # Sort years for consistent folding
+        all_available_years = [y for y in np.arange(int(self.config['time_start'][:4]), 
+                                                    int(self.config['time_end'][:4]) + 1)
+                                                    if y not in test_years]
         all_available_years.sort()
         
         if self.logger:
@@ -89,6 +78,7 @@ class KFoldCrossValidator:
             excluded_years = all_available_years[-remainder_years:]
             self.logger.info(f"Excluding {remainder_years} years for equal fold sizes: {excluded_years}")
         
+        # Generate folds
         for fold in range(self.k_folds):
             # Calculate validation years for this fold
             val_start_idx = fold * years_per_fold
@@ -183,7 +173,7 @@ class KFoldCrossValidator:
     def run_cross_validation(self, results_dir: Path) -> Dict[str, Any]:
         """
         Run complete K-fold cross validation.
-        
+
         Args:
             results_dir: Directory to save results
             

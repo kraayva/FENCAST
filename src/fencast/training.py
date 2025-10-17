@@ -332,39 +332,70 @@ class ModelTrainer:
             self.logger.info(f"Starting training for {epochs} epochs")
         
         for epoch in range(epochs):
-            # Train and validate
+            # Always run the training step for the epoch
             avg_train_loss = self.train_epoch(model, train_loader, optimizer, criterion)
-            avg_val_loss = self.validate_epoch(model, val_loader, criterion)
-            
             train_losses.append(avg_train_loss)
-            val_losses.append(avg_val_loss)
             
-            # Update scheduler
-            if scheduler:
-                scheduler.step(avg_val_loss)
-            
-            # Save best model
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                if save_path:
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
-                    torch.save({
-                        'model_type': self.model_type,
-                        'model_args': model_args,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'epoch': epoch,
-                        'train_loss': avg_train_loss,
-                        'val_loss': avg_val_loss,
-                        'config': self.config,
-                        'params': self.params
-                    }, save_path)
+            # Check if the validation dataloader has any data before using it
+            if val_loader and len(val_loader.dataset) > 0:
+                # --- SCENARIO 1: Standard run with validation ---
+                avg_val_loss = self.validate_epoch(model, val_loader, criterion)
+                val_losses.append(avg_val_loss)
                 
-                if self.logger:
-                    self.logger.info(f"Epoch [{epoch+1}/{epochs}], Train: {avg_train_loss:.6f}, Val: {avg_val_loss:.6f} (saved)")
+                # Update scheduler if it exists
+                if scheduler:
+                    scheduler.step(avg_val_loss)
+                
+                # Save the best model based on validation loss
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    if save_path:
+                        # Your existing dictionary for saving the model checkpoint
+                        checkpoint = {
+                            'model_type': self.model_type,
+                            'model_args': model_args,
+                            'model_state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict(),
+                            'epoch': epoch,
+                            'train_loss': avg_train_loss,
+                            'val_loss': avg_val_loss,
+                            'config': self.config,
+                            'params': self.params
+                        }
+                        save_path.parent.mkdir(parents=True, exist_ok=True)
+                        torch.save(checkpoint, save_path)
+                    
+                    if self.logger:
+                        self.logger.info(f"Epoch [{epoch+1}/{epochs}], Train: {avg_train_loss:.6f}, Val: {avg_val_loss:.6f} (saved)")
+                else:
+                    if self.logger:
+                        self.logger.info(f"Epoch [{epoch+1}/{epochs}], Train: {avg_train_loss:.6f}, Val: {avg_val_loss:.6f}")
+            
             else:
+                # --- SCENARIO 2: Final run with no validation ---
+                best_val_loss = avg_train_loss  # Track the training loss as the main metric
                 if self.logger:
-                    self.logger.info(f"Epoch [{epoch+1}/{epochs}], Train: {avg_train_loss:.6f}, Val: {avg_val_loss:.6f}")
+                    self.logger.info(f"Epoch [{epoch+1}/{epochs}], Train: {avg_train_loss:.6f} (No validation)")
+
+        # If it was a final run, save the model from the last epoch
+        if not (val_loader and len(val_loader.dataset) > 0) and save_path:
+            if self.logger:
+                self.logger.info(f"No validation set. Saving final model from last epoch to {save_path}")
+            
+            # Your existing dictionary for saving the model checkpoint
+            final_checkpoint = {
+                'model_type': self.model_type,
+                'model_args': model_args,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch': epochs - 1, # The last completed epoch
+                'train_loss': avg_train_loss, # Final training loss
+                'val_loss': float('nan'), # No validation loss available
+                'config': self.config,
+                'params': self.params
+            }
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(final_checkpoint, save_path)
         
         results = {
             'best_val_loss': best_val_loss,
