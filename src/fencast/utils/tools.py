@@ -153,6 +153,38 @@ def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dat
         raise e
 
 
+def load_ground_truth_data(config: dict, years: list) -> 'pd.DataFrame':
+    """
+    Loads, processes, and filters the ground truth (target) data for a specific set of years.
+
+    This function handles:
+    - Loading the raw target data CSV.
+    - Applying the 12:00 noon shift to the timestamp index.
+    - Dropping columns specified in the config.
+    - Filtering the data to include only the years specified.
+    - Dropping any rows with NaN values.
+
+    Args:
+        config (dict): The project configuration dictionary.
+        years (list): A list of integer years to filter the data for.
+
+    Returns:
+        pd.DataFrame: A clean DataFrame of ground truth data for the specified years.
+    """
+    import pandas as pd
+    from fencast.utils.paths import PROJECT_ROOT
+
+    gt_file = PROJECT_ROOT / config['target_data_raw']
+    gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
+    gt_df.index = gt_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
+
+    drop_cols = config.get('data_processing', {}).get('drop_columns', [])
+    if drop_cols:
+        gt_df = gt_df.drop(columns=drop_cols, errors='ignore')
+
+    return gt_df[gt_df.index.year.isin(years)].dropna()
+
+
 def calculate_persistence_baseline(data, lead_times, logger=None):
     """
     Calculate persistence baseline for different lead times.

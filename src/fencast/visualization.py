@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import json
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -185,7 +184,7 @@ class MLWPPlotter:
         
         # Generate the plot
         sns.set_theme(style="whitegrid")
-        
+
         # Create figure with dual y-axes if we have weather data
         if not self.weather_data.empty and (show_weather_total or show_weather_variables):
             fig, ax1 = plt.subplots(figsize=figsize)
@@ -431,37 +430,10 @@ class MLWPPlotter:
         if show_persistence:
             logger.info("\n=== Calculating Persistence Baselines ===")
             
-            # Load data for persistence calculation
-            import pandas as pd
-            from fencast.utils.paths import PROJECT_ROOT, PROCESSED_DATA_DIR
-            
-            setup_name = self.config.get('setup_name', 'default_setup')
-            
-            # Load the same processed data as the persistence script for consistency
-            labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
-            if not labels_file.exists():
-                # Try FFNN labels if CNN labels don't exist
-                labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
-                
-            if not labels_file.exists():
-                # Fallback to raw data if processed data doesn't exist
-                logger.warning("Processed labels not found, falling back to raw target data")
-                gt_file = PROJECT_ROOT / self.config['target_data_raw']
-                full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-                full_df.index = full_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
-                
-                # Drop columns to match the model's target
-                drop_cols = self.config.get('data_processing', {}).get('drop_columns', [])
-                if drop_cols:
-                    full_df = full_df.drop(columns=drop_cols, errors='ignore')
-            else:
-                # Use processed data (same as persistence script)
-                logger.info(f"Using processed data from: {labels_file}")
-                full_df = pd.read_parquet(labels_file)
-                
             # Filter for the test set years
             test_years = self.config['split_years']['test']
-            test_gt = full_df[full_df.index.year.isin(test_years)].dropna()
+            logger.info(f"Loading ground truth data for test years: {test_years}")
+            test_gt = load_ground_truth_data(self.config, test_years)
             
             if self.per_region:
                 # Calculate persistence baseline per-region efficiently

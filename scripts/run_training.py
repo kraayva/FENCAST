@@ -1,10 +1,6 @@
 # scripts/run_training.py
 
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import numpy as np
-import optuna
 import argparse
 import json
 from pathlib import Path
@@ -12,6 +8,7 @@ from pathlib import Path
 # Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
 
 logger = setup_logger("final_training")
@@ -113,22 +110,11 @@ if __name__ == '__main__':
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
 
     logger.info("--- Loading best hyperparameters from Optuna study ---")
-    try:
-        if args.study_name == 'latest':
-            study_dir = get_latest_study_dir(results_parent_dir, args.model_type)
-            logger.info("Loading best trained model...")
-        else:
-            study_dir = results_parent_dir / args.study_name
-
-        study_name = study_dir.name
-        storage_name = f"sqlite:///{study_dir / study_name}.db"
-        
-        study = optuna.load_study(study_name=study_name, storage=storage_name)
-        params = study.best_trial.params
-        logger.info(f"Loaded best parameters from study: '{study_name}'")
-    except Exception as e:
-        logger.error(f"Failed to load study: {e}")
-        raise
+    params, study_dir = load_best_params_from_study(
+        results_parent_dir=results_parent_dir,
+        model_type=args.model_type,
+        study_name=args.study_name
+    )
 
     # Validate and clean parameters
     final_params = validate_training_parameters(params)

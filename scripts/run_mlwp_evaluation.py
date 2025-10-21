@@ -20,12 +20,11 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch.nn as nn
 
 from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
-from fencast.models import DynamicCNN
-from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.tools import setup_logger, get_latest_study_dir, load_ground_truth_data
+from fencast.utils.experiment_management import load_trained_model
 
 
 def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
-    """Loads and merges a specific MLWP forecast dataset using the existing tools function."""
     from fencast.utils.tools import load_mlwp_data
     
     feature_var_names = config['feature_var_names']
@@ -106,14 +105,8 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
     # 3. ALIGN WITH GROUND TRUTH AND EVALUATE
     logger.info("Aligning predictions with ground truth and evaluating...")
     
-    # Load the full ground truth dataset
-    gt_file = PROJECT_ROOT / config['target_data_raw']
-    gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    drop_cols = config.get('data_processing', {}).get('drop_columns', [])
-    if drop_cols:
-        gt_df = gt_df.drop(columns=drop_cols, errors='ignore')
-   
     # Create predictions DataFrame
+    gt_df = load_ground_truth_data(config, list(range(1990, 2024))) # Load all years for max overlap
     preds_df = pd.DataFrame(predictions_np, index=timestamps, columns=gt_df.columns)
     
     # Find common timestamps and align
@@ -219,24 +212,13 @@ def main():
     
     # Find the study directory and load the trained model
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
-    try:
-        study_dir = get_latest_study_dir(results_parent_dir, model_type='cnn') if args.study_name == 'latest' else results_parent_dir / args.study_name
-        logger.info(f"Using model from study: {study_dir.name}")
-        
-        if args.final_model:
-            logger.info("Loading final model trained on all data...")
-            model_path = study_dir / "final_model.pth"
-        else:
-            logger.info("Loading best model from validation...")
-            model_path = study_dir / "best_model.pth"
-        checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
-        model = DynamicCNN(**checkpoint['model_args'])
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
-        
-    except FileNotFoundError as e:
-        logger.error(f"Failed to load model. Reason: {e}")
-        return
+    
+    study_dir = get_latest_study_dir(results_parent_dir, model_type='cnn') if args.study_name == 'latest' else results_parent_dir / args.study_name
+    model = load_trained_model(
+        study_dir=study_dir, 
+        use_final_model=args.final_model, 
+        device='cpu'
+    )
 
     # Get experiment parameters from config or command line
     mlwp_names = args.mlwp_models if args.mlwp_models else config.get('mlwp_names', [])

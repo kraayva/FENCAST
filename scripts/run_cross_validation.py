@@ -9,16 +9,14 @@ It uses the refactored training components for consistent behavior across differ
 import argparse
 import json
 import numpy as np
-import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
-import optuna
 
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
-from fencast.dataset import FencastDataset
 
 
 class KFoldCrossValidator:
@@ -291,24 +289,11 @@ def main():
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     
     # Load hyperparameters from study
-    try:
-        if args.study_name == 'latest':
-            study_dir = get_latest_study_dir(results_parent_dir, args.model_type)
-        else:
-            study_dir = results_parent_dir / args.study_name
-            
-        study_name = study_dir.name
-        storage_name = f"sqlite:///{study_dir / study_name}.db"
-        
-        study = optuna.load_study(study_name=study_name, storage=storage_name)
-        params = study.best_trial.params
-        
-        logger.info(f"Loaded best parameters from study: '{study_name}'")
-        logger.info(f"Best trial value: {study.best_trial.value:.6f}")
-        
-    except Exception as e:
-        logger.error(f"Failed to load study: {e}")
-        raise
+    params, study_dir = load_best_params_from_study(
+        results_parent_dir=results_parent_dir,
+        model_type=args.model_type,
+        study_name=args.study_name
+    )
     
     # Determine results directory
     if args.results_dir:
