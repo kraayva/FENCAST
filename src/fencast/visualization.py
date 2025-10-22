@@ -3,14 +3,66 @@
 import pandas as pd
 import numpy as np
 import json
+import seaborn as sns
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from fencast.utils.paths import load_config, PROJECT_ROOT
-from fencast.utils.tools import setup_logger, get_latest_study_dir, calculate_persistence_baseline, calculate_climatology_baseline
+from fencast.utils.tools import (
+    setup_logger,
+    get_latest_study_dir,
+    calculate_persistence_baseline,
+    calculate_climatology_baseline,
+    load_ground_truth_data,
+)
 
 logger = setup_logger("mlwp_visualization")
+
+
+# Helper functions to reduce code duplication
+
+def _extract_forecast_lead_time(data: dict, mlwp_name: str, timedelta_str: str) -> float:
+    """Extract forecast lead time from metrics data with fallback logic."""
+    if 'forecast_lead_time_days' in data:
+        return data['forecast_lead_time_days']
+    
+    # Try to get actual forecast lead time from MLWP files
+    try:
+        from fencast.utils.tools import get_mlwp_forecast_lead_time
+        return get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
+    except Exception:
+        # Fallback: extract number from filename and convert
+        td_num = int(timedelta_str.replace('td', ''))
+        return (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
+
+
+def _load_metrics_files(study_dir: Path, model_name: str) -> List[Path]:
+    """Load and validate metrics files from evaluation directory."""
+    eval_dir = study_dir / model_name / "mlwp_evaluation"
+    metric_files = list(eval_dir.glob('**/metrics_*.json'))
+    
+    if not metric_files:
+        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
+        return []
+    
+    return metric_files
+
+
+def _setup_study_directory(config_name: str, model_type: str, study_name: str) -> tuple:
+    """Common setup logic for study directory and config loading."""
+    config = load_config(config_name)
+    setup_name = config.get('setup_name', 'default_setup')
+    
+    # Find study directory
+    results_parent_dir = PROJECT_ROOT / "results" / setup_name
+    try:
+        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
+        logger.info(f"Loading results from: {study_dir}")
+        return config, study_dir
+    except FileNotFoundError as e:
+        logger.error(e)
+        raise
 
 
 def load_weather_rmse_data(weather_rmse_file: Path) -> pd.DataFrame:
@@ -41,93 +93,74 @@ def load_weather_rmse_data(weather_rmse_file: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def load_energy_prediction_data(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
+def _process_metrics_file(file_path: Path) -> dict:
+    """Process a single metrics file and extract common data."""
+    mlwp_name = file_path.parent.name
+    timedelta_str = file_path.stem.replace('metrics_', '')
+    
+    with open(file_path, 'r') as fp:
+        data = json.load(fp)
+    
+    if data['rmse'] is None:
+        return None
+    
+    actual_lead_time_days = _extract_forecast_lead_time(data, mlwp_name, timedelta_str)
+    
+    return {
+        'mlwp_name': mlwp_name,
+        'timedelta_str': timedelta_str,
+        'timedelta_days': actual_lead_time_days,
+        'data': data
+    }
+
+
+def load_energy_prediction_data(study_dir: Path, model_name: str = "best_model") -> pd.DataFrame:
     """
     Loads energy prediction RMSE data from MLWP evaluation results.
     
     Returns:
         DataFrame with energy prediction RMSE by timedelta
     """
-    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
-    metric_files = list(eval_dir.glob('**/metrics_*.json'))
-    
+    metric_files = _load_metrics_files(study_dir, model_name)
     if not metric_files:
-        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
         return pd.DataFrame()
-        
+    
     results = []
-    for f in metric_files:
-        mlwp_name = f.parent.name
-        timedelta_str = f.stem.replace('metrics_', '')  # Get 'td03', 'td07', etc.
-        with open(f, 'r') as fp:
-            data = json.load(fp)
-            if data['rmse'] is not None:
-                # Try to get forecast lead time from saved metrics first
-                if 'forecast_lead_time_days' in data:
-                    actual_lead_time_days = data['forecast_lead_time_days']
-                else:
-                    # Try to get actual forecast lead time from MLWP files
-                    try:
-                        from fencast.utils.tools import get_mlwp_forecast_lead_time
-                        # Use any variable to get the forecast lead time (all should be the same)
-                        actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-                    except Exception:
-                        # Fallback: extract number from filename and convert
-                        td_num = int(timedelta_str.replace('td', ''))
-                        actual_lead_time_days = (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
-                
-                results.append({
-                    'mlwp_model': mlwp_name,
-                    'timedelta_days': actual_lead_time_days,
-                    'rmse': data['rmse']
-                })
+    for file_path in metric_files:
+        processed = _process_metrics_file(file_path)
+        if processed is not None:
+            results.append({
+                'mlwp_model': processed['mlwp_name'],
+                'timedelta_days': processed['timedelta_days'],
+                'rmse': processed['data']['rmse']
+            })
     
     return pd.DataFrame(results)
 
 
-def load_energy_prediction_data_per_region(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
+def load_energy_prediction_data_per_region(study_dir: Path, model_name: str = "best_model") -> pd.DataFrame:
     """
     Loads per-region energy prediction RMSE data from MLWP evaluation results.
     
     Returns:
         DataFrame with columns: ['mlwp_model', 'timedelta_days', 'region', 'rmse']
     """
-    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
-    metric_files = list(eval_dir.glob('**/metrics_*.json'))
-    
+    metric_files = _load_metrics_files(study_dir, model_name)
     if not metric_files:
-        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
         return pd.DataFrame()
-        
+    
     results = []
-    for f in metric_files:
-        mlwp_name = f.parent.name
-        timedelta_str = f.stem.replace('metrics_', '')  # Get 'td03', 'td07', etc.
-        with open(f, 'r') as fp:
-            data = json.load(fp)
-            if data['rmse'] is not None and 'region_metrics' in data:
-                # Try to get forecast lead time from saved metrics first
-                if 'forecast_lead_time_days' in data:
-                    actual_lead_time_days = data['forecast_lead_time_days']
-                else:
-                    # Try to get actual forecast lead time from MLWP files
-                    try:
-                        from fencast.utils.tools import get_mlwp_forecast_lead_time
-                        # Use any variable to get the forecast lead time (all should be the same)
-                        actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-                    except Exception:
-                        # Fallback: extract number from filename and convert
-                        td_num = int(timedelta_str.replace('td', ''))
-                        actual_lead_time_days = (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
-                
-                # Add per-region results
-                for region, region_data in data['region_metrics'].items():
-                    results.append({
-                        'mlwp_model': mlwp_name,
-                        'timedelta_days': actual_lead_time_days,
-                        'region': region,
-                        'rmse': region_data['rmse']
-                    })
+    for file_path in metric_files:
+        processed = _process_metrics_file(file_path)
+        if processed is not None and 'region_metrics' in processed['data']:
+            # Add per-region results
+            for region, region_data in processed['data']['region_metrics'].items():
+                results.append({
+                    'mlwp_model': processed['mlwp_name'],
+                    'timedelta_days': processed['timedelta_days'],
+                    'region': region,
+                    'rmse': region_data['rmse']
+                })
     
     return pd.DataFrame(results)
 
@@ -137,16 +170,16 @@ class MLWPPlotter:
     Flexible plotting class for MLWP evaluation results.
     """
     
-    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu', final_model: bool = False):
+    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu', model_name: str = "best_model"):
         self.config = config
         self.study_dir = study_dir
         self.per_region = per_region
         self.mlwp_name = mlwp_name
-        self.final_model = final_model
+        self.model_name = model_name
         if per_region:
-            self.energy_data = load_energy_prediction_data_per_region(study_dir, final_model)
+            self.energy_data = load_energy_prediction_data_per_region(study_dir, model_name)
         else:
-            self.energy_data = load_energy_prediction_data(study_dir, final_model)
+            self.energy_data = load_energy_prediction_data(study_dir, model_name)
         self.weather_data = pd.DataFrame()
         
     def load_weather_data(self, weather_rmse_file: Path):
@@ -284,7 +317,7 @@ class MLWPPlotter:
             # Choose suffix based on plotting mode
             suffix = "regions" if self.per_region else "mean"
             filename = f"{self.mlwp_name}_cf_rmse_{suffix}.png"
-            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)
             save_path = plot_dir / filename
@@ -430,10 +463,49 @@ class MLWPPlotter:
         if show_persistence:
             logger.info("\n=== Calculating Persistence Baselines ===")
             
-            # Filter for the test set years
-            test_years = self.config['split_years']['test']
-            logger.info(f"Loading ground truth data for test years: {test_years}")
-            test_gt = load_ground_truth_data(self.config, test_years)
+            # Use processed labels data directly to ensure timestamp alignment with model predictions
+            logger.info("Loading processed labels data for persistence baseline...")
+            from fencast.utils.paths import PROCESSED_DATA_DIR
+            import pandas as pd
+            
+            setup_name = self.config.get('setup_name', 'default_setup')
+            labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+            
+            if labels_file.exists():
+                # Load processed labels (already at 12:00 timestamps)
+                test_gt_all = pd.read_parquet(labels_file)
+                logger.info(f"Loaded processed labels with {len(test_gt_all)} timestamps")
+                
+                # Get timestamps that overlap with model predictions to ensure fair comparison
+                if not self.energy_data.empty:
+                    # Get model prediction timestamps from the actual predictions files
+                    eval_dir = self.study_dir / self.model_name / "mlwp_evaluation"
+                    
+                    # Find any prediction file to get the timestamp pattern
+                    pred_files = list(eval_dir.glob('**/predictions_*.csv'))
+                    if pred_files:
+                        sample_pred_df = pd.read_csv(pred_files[0], index_col=0, parse_dates=True)
+                        model_timestamps = sample_pred_df.index
+                        
+                        # Filter ground truth to only timestamps that exist in model predictions
+                        overlap_timestamps = test_gt_all.index.intersection(model_timestamps)
+                        test_gt = test_gt_all.loc[overlap_timestamps]
+                        
+                        logger.info(f"Using {len(test_gt)} overlapping timestamps for persistence baseline (was {len(test_gt_all)} total)")
+                    else:
+                        # Fallback: filter by test years
+                        test_years = self.config['split_years']['test']
+                        test_gt = test_gt_all[test_gt_all.index.year.isin(test_years)]
+                        logger.warning("No prediction files found, using test years from processed labels")
+                else:
+                    # Fallback: filter by test years
+                    test_years = self.config['split_years']['test']
+                    test_gt = test_gt_all[test_gt_all.index.year.isin(test_years)]
+            else:
+                # Fallback to original method if processed labels not found
+                logger.warning(f"Processed labels not found at {labels_file}, using raw data")
+                test_years = self.config['split_years']['test']
+                test_gt = load_ground_truth_data(self.config, test_years)
             
             if self.per_region:
                 # Calculate persistence baseline per-region efficiently
@@ -470,18 +542,15 @@ class MLWPPlotter:
                       label=f"Climatology Baseline ({climatology_rmse:.4f})")
 
 
-def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, final_model: bool = False) -> pd.DataFrame:
+def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, model_name: str = "best_model") -> pd.DataFrame:
     """
     Loads energy prediction RMSE data with seasonal breakdown computed from predictions and ground truth.
     
     Returns:
         DataFrame with columns: ['mlwp_model', 'timedelta_days', 'season', 'rmse']
     """
-    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
-    metric_files = list(eval_dir.glob('**/metrics_*.json'))
-    
+    metric_files = _load_metrics_files(study_dir, model_name)
     if not metric_files:
-        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
         return pd.DataFrame()
     
     # Load ground truth data
@@ -518,29 +587,17 @@ def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, final_mo
     })
     
     results = []
-    for f in metric_files:
-        mlwp_name = f.parent.name
-        timedelta_str = f.stem.replace('metrics_', '')
-        
+    for file_path in metric_files:
+        processed = _process_metrics_file(file_path)
+        if processed is None:
+            continue
+            
         # Load predictions
-        pred_file = f.parent / f"predictions_{timedelta_str}.csv"
+        pred_file = file_path.parent / f"predictions_{processed['timedelta_str']}.csv"
         if not pred_file.exists():
             continue
             
         pred_df = pd.read_csv(pred_file, index_col=0, parse_dates=True)
-        
-        # Get forecast lead time
-        with open(f, 'r') as fp:
-            data = json.load(fp)
-            if 'forecast_lead_time_days' in data:
-                actual_lead_time_days = data['forecast_lead_time_days']
-            else:
-                try:
-                    from fencast.utils.tools import get_mlwp_forecast_lead_time
-                    actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-                except Exception:
-                    td_num = int(timedelta_str.replace('td', ''))
-                    actual_lead_time_days = (td_num + 1) * 6 / 24
         
         # Align predictions with ground truth
         common_indices = pred_df.index.intersection(gt_df.index)
@@ -571,8 +628,8 @@ def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, final_mo
                 seasonal_rmse = np.sqrt(np.mean((gt_values[valid_mask] - pred_values[valid_mask]) ** 2))
                 
                 results.append({
-                    'mlwp_model': mlwp_name,
-                    'timedelta_days': actual_lead_time_days,
+                    'mlwp_model': processed['mlwp_name'],
+                    'timedelta_days': processed['timedelta_days'],
                     'season': season,
                     'rmse': seasonal_rmse
                 })
@@ -634,12 +691,12 @@ def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times
 class MLWPSeasonalPlotter:
     """Plotting class for seasonal MLWP evaluation results."""
     
-    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', final_model: bool = False):
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', model_name: str = "best_model"):
         self.config = config
         self.study_dir = study_dir
         self.mlwp_name = mlwp_name
-        self.final_model = final_model
-        self.energy_data = load_energy_prediction_data_seasonal(study_dir, config, final_model)
+        self.model_name = model_name
+        self.energy_data = load_energy_prediction_data_seasonal(study_dir, config, model_name)
         
     def plot_seasonal_results(self, 
                              persistence_lead_times: Optional[List[int]] = None,
@@ -701,7 +758,7 @@ class MLWPSeasonalPlotter:
         # Save plot
         if save_path is None:
             filename = f"{self.mlwp_name}_cf_rmse_seasonal.png"
-            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)
             save_path = plot_dir / filename
@@ -715,24 +772,17 @@ def create_mlwp_seasonal_plot(config_name: str,
                              persistence_lead_times: Optional[List[int]] = None,
                              figsize: tuple = (16, 8),
                              mlwp_name: str = 'pangu',
-                             final_model: bool = False) -> None:
+                             model_name: str = "best_model") -> None:
     """Create MLWP seasonal evaluation plot."""
     logger.info(f"--- Creating MLWP Seasonal Plot for study '{study_name}' ---")
     
-    config = load_config(config_name)
-    setup_name = config.get('setup_name', 'default_setup')
-    
-    # Find study directory
-    results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
-        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
-        logger.info(f"Loading results from: {study_dir}")
-    except FileNotFoundError as e:
-        logger.error(e)
+        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+    except FileNotFoundError:
         return
 
     # Create seasonal plotter
-    plotter = MLWPSeasonalPlotter(config, study_dir, mlwp_name=mlwp_name, final_model=final_model)
+    plotter = MLWPSeasonalPlotter(config, study_dir, mlwp_name=mlwp_name, model_name=model_name)
     
     # Create the plot
     plotter.plot_seasonal_results(
@@ -741,57 +791,39 @@ def create_mlwp_seasonal_plot(config_name: str,
     )
 
 
-def load_energy_prediction_rmse_mae_data(study_dir: Path, final_model: bool = False) -> pd.DataFrame:
+def load_energy_prediction_rmse_mae_data(study_dir: Path, model_name: str = "best_model") -> pd.DataFrame:
     """
     Loads RMSE and MAE data from MLWP evaluation results.
     
     Returns:
         DataFrame with columns: ['mlwp_model', 'timedelta_days', 'rmse', 'mae']
     """
-    eval_dir = study_dir / "final_model" / "mlwp_evaluation" if final_model else study_dir / "mlwp_evaluation"
-    metric_files = list(eval_dir.glob('**/metrics_*.json'))
-    
+    metric_files = _load_metrics_files(study_dir, model_name)
     if not metric_files:
-        logger.error(f"No metric files found in {eval_dir}. Please run mlwp_evaluation.py first.")
         return pd.DataFrame()
     
     results = []
-    for f in metric_files:
-        mlwp_name = f.parent.name
-        timedelta_str = f.stem.replace('metrics_', '')
-        
-        with open(f, 'r') as fp:
-            data = json.load(fp)
-        
-        # Get forecast lead time
-        if 'forecast_lead_time_days' in data:
-            actual_lead_time_days = data['forecast_lead_time_days']
-        else:
-            try:
-                from fencast.utils.tools import get_mlwp_forecast_lead_time
-                actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-            except Exception:
-                td_num = int(timedelta_str.replace('td', ''))
-                actual_lead_time_days = (td_num + 1) * 6 / 24
-        
-        # Extract RMSE and MAE
-        rmse = data.get('rmse', 0.0)
-        mae = data.get('mae', 0.0)
-        
-        results.extend([
-            {
-                'mlwp_model': mlwp_name,
-                'timedelta_days': actual_lead_time_days,
-                'metric_type': 'RMSE',
-                'value': rmse
-            },
-            {
-                'mlwp_model': mlwp_name,
-                'timedelta_days': actual_lead_time_days,
-                'metric_type': 'MAE',
-                'value': mae
-            }
-        ])
+    for file_path in metric_files:
+        processed = _process_metrics_file(file_path)
+        if processed is not None:
+            # Extract RMSE and MAE
+            rmse = processed['data'].get('rmse', 0.0)
+            mae = processed['data'].get('mae', 0.0)
+            
+            results.extend([
+                {
+                    'mlwp_model': processed['mlwp_name'],
+                    'timedelta_days': processed['timedelta_days'],
+                    'metric_type': 'RMSE',
+                    'value': rmse
+                },
+                {
+                    'mlwp_model': processed['mlwp_name'],
+                    'timedelta_days': processed['timedelta_days'],
+                    'metric_type': 'MAE',
+                    'value': mae
+                }
+            ])
     
     return pd.DataFrame(results)
 
@@ -799,12 +831,12 @@ def load_energy_prediction_rmse_mae_data(study_dir: Path, final_model: bool = Fa
 class MLWPRmseMaePlotter:
     """Plotting class for RMSE vs MAE comparison."""
     
-    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', final_model: bool = False):
+    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', model_name: str = "best_model"):
         self.config = config
         self.study_dir = study_dir
         self.mlwp_name = mlwp_name
-        self.final_model = final_model
-        self.data = load_energy_prediction_rmse_mae_data(study_dir, final_model)
+        self.model_name = model_name
+        self.data = load_energy_prediction_rmse_mae_data(study_dir, model_name)
         
     def plot_rmse_mae_comparison(self, 
                                 figsize: tuple = (16, 8),
@@ -842,7 +874,7 @@ class MLWPRmseMaePlotter:
         # Save plot
         if save_path is None:
             filename = f"{self.mlwp_name}_cf_rmse_mae.png"
-            model_subdir = "final_model" if hasattr(self, 'final_model') and self.final_model else "best_model"
+            model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)
             save_path = plot_dir / filename
@@ -855,24 +887,17 @@ def create_mlwp_rmse_mae_plot(config_name: str,
                              study_name: str, 
                              figsize: tuple = (16, 8),
                              mlwp_name: str = 'pangu',
-                             final_model: bool = False) -> None:
+                             model_name: str = "best_model") -> None:
     """Create MLWP RMSE vs MAE comparison plot."""
     logger.info(f"--- Creating MLWP RMSE vs MAE Plot for study '{study_name}' ---")
     
-    config = load_config(config_name)
-    setup_name = config.get('setup_name', 'default_setup')
-    
-    # Find study directory
-    results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
-        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
-        logger.info(f"Loading results from: {study_dir}")
-    except FileNotFoundError as e:
-        logger.error(e)
+        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+    except FileNotFoundError:
         return
 
     # Create RMSE vs MAE plotter
-    plotter = MLWPRmseMaePlotter(config, study_dir, mlwp_name=mlwp_name, final_model=final_model)
+    plotter = MLWPRmseMaePlotter(config, study_dir, mlwp_name=mlwp_name, model_name=model_name)
     
     # Create the plot
     plotter.plot_rmse_mae_comparison(figsize=figsize)
@@ -890,7 +915,7 @@ def create_mlwp_plot(config_name: str,
                      figsize: tuple = (16, 8),
                      per_region: bool = False,
                      mlwp_name: str = 'pangu',
-                     final_model: bool = False) -> None:
+                     model_name: str = "best_model") -> None:
     """
     High-level function to create MLWP evaluation plots.
     
@@ -908,20 +933,13 @@ def create_mlwp_plot(config_name: str,
     """
     logger.info(f"--- Creating MLWP Evaluation Plot for study '{study_name}' ---")
     
-    config = load_config(config_name)
-    setup_name = config.get('setup_name', 'default_setup')
-    
-    # Find the study directory
-    results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
-        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
-        logger.info(f"Loading results from: {study_dir}")
-    except FileNotFoundError as e:
-        logger.error(e)
+        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+    except FileNotFoundError:
         return
 
     # Create plotter instance
-    plotter = MLWPPlotter(config, study_dir, per_region=per_region, mlwp_name=mlwp_name, final_model=final_model)
+    plotter = MLWPPlotter(config, study_dir, per_region=per_region, mlwp_name=mlwp_name, model_name=model_name)
     
     # Load weather data if provided
     if weather_rmse_file:

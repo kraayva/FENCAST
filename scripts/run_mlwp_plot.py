@@ -42,8 +42,8 @@ def main():
                        help='Create seasonal analysis plot (Winter/Spring/Summer/Autumn)')
     parser.add_argument('--rmse-mae', action='store_true',
                        help='Create RMSE vs MAE comparison plot')
-    parser.add_argument('--final-model', action='store_true',
-                       help='Use final model results instead of best model')
+    parser.add_argument('--model-name', default='best_model',
+                       help='Model directory name to use (default: best_model, can be "final_model" or custom name)')
     parser.add_argument('--mlwp-name', '-n', default='pangu',
                        help='MLWP model name for filename and data loading (default: pangu)')
     
@@ -79,7 +79,7 @@ def main():
                 persistence_lead_times=args.persistence_lead_times,
                 figsize=tuple(args.figsize),
                 mlwp_name=args.mlwp_name,
-                final_model=args.final_model
+                model_name=args.model_name
             )
             logger.info("MLWP seasonal plot creation completed successfully")
         elif args.rmse_mae:
@@ -90,7 +90,7 @@ def main():
                 study_name=args.study_name,
                 figsize=tuple(args.figsize),
                 mlwp_name=args.mlwp_name,
-                final_model=args.final_model
+                model_name=args.model_name
             )
             logger.info("MLWP RMSE vs MAE plot creation completed successfully")
         else:
@@ -108,7 +108,7 @@ def main():
                 figsize=tuple(args.figsize),
                 per_region=args.per_region,
                 mlwp_name=args.mlwp_name,
-                final_model=args.final_model
+                model_name=args.model_name
             )
             logger.info("MLWP plot creation completed successfully")
         

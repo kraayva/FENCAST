@@ -202,7 +202,6 @@ def calculate_persistence_baseline(data, lead_times, logger=None):
         {lead_time: {'mse': float, 'rmse': float, 'mae': float, 'samples': int}}
     """
     from datetime import timedelta
-    import pandas as pd
     import numpy as np
     
     # Handle single lead time input
