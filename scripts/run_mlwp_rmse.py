@@ -48,8 +48,14 @@ def main():
     config = load_config(args.config)
     setup_name = config.get('setup_name', 'default_setup')
     
-    # Set output path
-    output_path = PROJECT_ROOT / args.output_file
+    # Set output path in results directory with MLWP model name
+    results_dir = PROJECT_ROOT / "results"
+    results_dir.mkdir(exist_ok=True)
+    
+    # Create filename with MLWP model names
+    mlwp_names = "_".join(args.mlwp_models)
+    output_filename = f"weather_rmse_{mlwp_names}.csv"
+    output_path = results_dir / output_filename
     
     # Calculate weather RMSE
     try:

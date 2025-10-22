@@ -7,8 +7,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Optional
+import matplotlib.patches as mpatches
 
-from fencast.utils.paths import load_config, PROJECT_ROOT
+from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
 from fencast.utils.tools import (
     setup_logger,
     get_latest_study_dir,
@@ -21,21 +22,6 @@ logger = setup_logger("mlwp_visualization")
 
 
 # Helper functions to reduce code duplication
-
-def _extract_forecast_lead_time(data: dict, mlwp_name: str, timedelta_str: str) -> float:
-    """Extract forecast lead time from metrics data with fallback logic."""
-    if 'forecast_lead_time_days' in data:
-        return data['forecast_lead_time_days']
-    
-    # Try to get actual forecast lead time from MLWP files
-    try:
-        from fencast.utils.tools import get_mlwp_forecast_lead_time
-        return get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-    except Exception:
-        # Fallback: extract number from filename and convert
-        td_num = int(timedelta_str.replace('td', ''))
-        return (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
-
 
 def _load_metrics_files(study_dir: Path, model_name: str) -> List[Path]:
     """Load and validate metrics files from evaluation directory."""
@@ -104,7 +90,12 @@ def _process_metrics_file(file_path: Path) -> dict:
     if data['rmse'] is None:
         return None
     
-    actual_lead_time_days = _extract_forecast_lead_time(data, mlwp_name, timedelta_str)
+    # Convert timedelta string to days: td00->0.25, td01->0.5, etc.
+    if 'forecast_lead_time_days' in data:
+        actual_lead_time_days = data['forecast_lead_time_days']
+    else:
+        td_num = int(timedelta_str.replace('td', ''))
+        actual_lead_time_days = (td_num + 1) * 6 / 24  # 6h steps shifted by 1, convert to days
     
     return {
         'mlwp_name': mlwp_name,
@@ -170,7 +161,11 @@ class MLWPPlotter:
     Flexible plotting class for MLWP evaluation results.
     """
     
-    def __init__(self, config: dict, study_dir: Path, per_region: bool = False, mlwp_name: str = 'pangu', model_name: str = "best_model"):
+    def __init__(self, config: dict, 
+                 study_dir: Path, 
+                 per_region: bool = False, 
+                 mlwp_name: str = 'pangu', 
+                 model_name: str = "best_model"):
         self.config = config
         self.study_dir = study_dir
         self.per_region = per_region
@@ -185,13 +180,47 @@ class MLWPPlotter:
     def load_weather_data(self, weather_rmse_file: Path):
         """Load weather RMSE data for comparison."""
         self.weather_data = load_weather_rmse_data(weather_rmse_file)
+
+    def _compute_target_stats(self):
+        """Compute mean/std of the target (capacity factor) from processed labels used to normalize RMSE.
+
+        Returns (mean, std) tuple for the test set used in plotting.
+        If processed labels are not available, returns (None, None).
+        """
+        from fencast.utils.paths import PROCESSED_DATA_DIR
+        import pandas as pd
+
+        setup_name = self.config.get('setup_name', 'default_setup')
+        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+        if not labels_file.exists():
+            labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+
+        if not labels_file.exists():
+            logger.warning("Processed labels not found for normalization; will skip normalization")
+            return None, None
+
+        df = pd.read_parquet(labels_file)
+        # Restrict to test years
+        test_years = self.config['split_years']['test']
+        df_test = df[df.index.year.isin(test_years)].dropna()
+        if df_test.empty:
+            logger.warning("No test-set labels found for normalization; will skip normalization")
+            return None, None
+
+        # Compute std across all regions/columns (flatten)
+        vals = df_test.values.flatten()
+        vals = vals[~np.isnan(vals)]
+        if len(vals) == 0:
+            return None, None
+
+        return np.mean(vals), np.std(vals)
         
     def plot_mlwp_results(self, 
                          show_persistence: bool = True,
                          show_climatology: bool = True, 
                          show_weather_total: bool = True,
                          show_weather_variables: bool = False,
-                         persistence_lead_times: Optional[List[int]] = None,
+                         persistence_lead_times: List[int] = list(range(1, 11)),
                          figsize: tuple = (16, 8),
                          save_path: Optional[Path] = None) -> None:
         """
@@ -202,50 +231,61 @@ class MLWPPlotter:
             show_climatology: Whether to show climatology baseline
             show_weather_total: Whether to show total weather RMSE
             show_weather_variables: Whether to show individual weather variable RMSE
-            persistence_lead_times: List of lead times for persistence (default: 1-20)
+            persistence_lead_times: List of lead times for persistence (default: 1-10)
             figsize: Figure size tuple
             save_path: Path to save the plot (default: 
         """
         if self.energy_data.empty:
             logger.error("No energy prediction data available for plotting")
             return
-            
-        # Set default persistence lead times
-        if persistence_lead_times is None:
-            max_timedelta = max(self.energy_data['timedelta_days'].max(), 20)
-            persistence_lead_times = list(range(1, int(max_timedelta) + 1))
         
         # Generate the plot
         sns.set_theme(style="whitegrid")
 
-        # Create figure with dual y-axes if we have weather data
+        # If weather data present and user wants weather variables, offer an option to normalize energy RMSE
         if not self.weather_data.empty and (show_weather_total or show_weather_variables):
-            fig, ax1 = plt.subplots(figsize=figsize)
-            ax2 = ax1.twinx()
-            
-            # Plot energy prediction RMSE on left axis
-            self._plot_energy_predictions(ax1)
-            
-            # Plot weather prediction RMSE on right axis
-            self._plot_weather_predictions(ax2, show_weather_total, show_weather_variables)
-            
-            # Plot baselines on left axis
-            self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times)
-            
-            # Customize axes
-            ax1.set_xlabel('Forecast Lead Time (Days)', fontsize=12)
-            ax1.set_ylabel('Solar Capacity Factor RMSE', fontsize=12, color='blue')
-            ax2.set_ylabel('Weather Prediction RMSE (Normalized)', fontsize=12, color='red')
-            ax1.tick_params(axis='y', labelcolor='blue')
-            ax2.tick_params(axis='y', labelcolor='red')
-            
-            # Combine legends and position outside plot area
-            lines1, labels1 = ax1.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines1 + lines2, labels1 + labels2, 
-                      loc='center left', bbox_to_anchor=(1.1, 0.5), fontsize=8)
-            
-            plt.title(f'Energy vs Weather Prediction Performance\\n(Study: {self.study_dir.name})', fontsize=14)
+            # Compute target mean/std for normalization
+            target_mean, target_std = self._compute_target_stats()
+
+            if target_std and target_std > 0:
+                logger.info(f"Normalizing energy RMSE and persistence by target std = {target_std:.4f}")
+                # When normalized, plot everything on a single axis (same units as weather normalized RMSE)
+                fig, ax1 = plt.subplots(figsize=figsize)
+
+                # Plot energy prediction RMSE normalized
+                self._plot_energy_predictions(ax1, normalize_by_std=target_std)
+
+                # Plot weather prediction RMSE on same axis (already normalized to ERA5 std)
+                # Weather RMSE is dimensionless; energy RMSE divided by energy std becomes comparable
+                self._plot_weather_predictions(ax1, show_weather_total, show_weather_variables, use_single_axis=True)
+
+                # Plot baselines normalized as well
+                self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times, normalize_by_std=target_std)
+
+                ax1.set_xlabel('Forecast Lead Time (Days)', fontsize=12)
+                ax1.set_ylabel('Normalized RMSE (σ units)', fontsize=12)
+                ax1.tick_params(axis='y')
+
+                # Combine legends and position outside plot area
+                lines, labels = ax1.get_legend_handles_labels()
+                ax1.legend(lines, labels, loc='center left', bbox_to_anchor=(1.1, 0.5), fontsize=8)
+                plt.title(f'Normalized Energy vs Weather Prediction Performance\\n(Study: {self.study_dir.name})', fontsize=14)
+            else:
+                # Fallback to dual-axis plot if we can't compute normalization stats
+                fig, ax1 = plt.subplots(figsize=figsize)
+                ax2 = ax1.twinx()
+                self._plot_energy_predictions(ax1)
+                self._plot_weather_predictions(ax2, show_weather_total, show_weather_variables)
+                self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times)
+                ax1.set_xlabel('Forecast Lead Time (Days)', fontsize=12)
+                ax1.set_ylabel('Solar Capacity Factor RMSE', fontsize=12, color='blue')
+                ax2.set_ylabel('Weather Prediction RMSE (Normalized)', fontsize=12, color='red')
+                ax1.tick_params(axis='y', labelcolor='blue')
+                ax2.tick_params(axis='y', labelcolor='red')
+                lines1, labels1 = ax1.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax1.legend(lines1 + lines2, labels1 + labels2, loc='center left', bbox_to_anchor=(1.1, 0.5), fontsize=8)
+                plt.title(f'Energy vs Weather Prediction Performance\\n(Study: {self.study_dir.name})', fontsize=14)
             
         else:
             # Single-axis plot for energy predictions only
@@ -316,7 +356,8 @@ class MLWPPlotter:
         if save_path is None:
             # Choose suffix based on plotting mode
             suffix = "regions" if self.per_region else "mean"
-            filename = f"{self.mlwp_name}_cf_rmse_{suffix}.png"
+            filename = f"{self.mlwp_name}_cf_rmse_{suffix}"
+            filename += "_weather.png" if not self.weather_data.empty else ".png"
             model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)
@@ -370,7 +411,6 @@ class MLWPPlotter:
 
     def _create_shared_legend(self, fig, ax1, ax2):
         """Create a single shared legend containing all main region names."""
-        import matplotlib.patches as mpatches
         
         # Get all main regions that appear in the data
         all_regions = set()
@@ -401,8 +441,12 @@ class MLWPPlotter:
                   ncol=2,
                   fontsize=10)
 
-    def _plot_energy_predictions(self, ax, region_filter=None):
-        """Plot energy prediction RMSE lines."""
+    def _plot_energy_predictions(self, ax, region_filter=None, normalize_by_std: float = None):
+        """Plot energy prediction RMSE lines.
+
+        If normalize_by_std is provided, divide RMSE values by this standard deviation
+        to create dimensionless sigma-units comparable to weather RMSE.
+        """
         if self.per_region:
             # Plot one line per region for each MLWP model
             main_regions_labeled = set()  # Track which main regions have been labeled
@@ -429,23 +473,33 @@ class MLWPPlotter:
             # Original behavior: one line per MLWP model (averaged across regions)
             for mlwp in self.energy_data['mlwp_model'].unique():
                 data_subset = self.energy_data[self.energy_data['mlwp_model'] == mlwp]
-                ax.plot(data_subset['timedelta_days'], data_subset['rmse'], 
-                       marker='o', linewidth=2.5, label=f'Solar CF predicted from {mlwp}')
+                y = data_subset['rmse'].values
+                label = f'Solar CF predicted from {mlwp}'
+                if normalize_by_std and normalize_by_std > 0:
+                    y = y / normalize_by_std
+                    label += ' (normalized)'
+
+                ax.plot(data_subset['timedelta_days'], y, 
+                       marker='o', linewidth=2.5, label=label)
     
-    def _plot_weather_predictions(self, ax, show_total: bool, show_variables: bool):
-        """Plot weather prediction RMSE lines."""
-        colors = ['red', 'orange', 'purple', 'brown', 'pink']
+    def _plot_weather_predictions(self, ax, show_total: bool, show_variables: bool, use_single_axis: bool = False):
+        """Plot weather prediction RMSE lines.
+
+        If use_single_axis is True, the plotting will be done on the provided single axis
+        (used when energy RMSE is normalized to the same units).
+        """
+        colors = ['green', 'orange', 'purple', 'brown', 'pink']
         linestyles = ['--', '-.', ':']
-        
+
         for mlwp in self.weather_data['mlwp_model'].unique():
             data_subset = self.weather_data[self.weather_data['mlwp_model'] == mlwp]
-            
+
             if show_total:
                 # Plot total RMSE with prominent styling
                 ax.plot(data_subset['timedelta_days'], data_subset['total_rmse'], 
                        marker='s', linewidth=3, linestyle='--', alpha=0.8,
-                       color='red', label=f'{mlwp} (Total Weather RMSE)')
-            
+                       color='green', label=f'{mlwp} (Total Weather RMSE)')
+
             if show_variables:
                 # Plot individual variable RMSE with thinner lines
                 var_cols = [col for col in self.weather_data.columns if col.endswith('_avg_rmse')]
@@ -453,20 +507,18 @@ class MLWPPlotter:
                     var_name = var_col.replace('_avg_rmse', '')
                     color = colors[i % len(colors)]
                     linestyle = linestyles[i % len(linestyles)]
-                    
+
                     ax.plot(data_subset['timedelta_days'], data_subset[var_col], 
                            marker='', linewidth=1.5, linestyle=linestyle, alpha=0.6,
                            color=color, label=f'{mlwp} ({var_name})')
     
-    def _plot_baselines(self, ax, show_persistence: bool, show_climatology: bool, persistence_lead_times: List[int], region_filter=None):
+    def _plot_baselines(self, ax, show_persistence: bool, show_climatology: bool, persistence_lead_times: List[int], region_filter=None, normalize_by_std: float = None):
         """Plot baseline comparisons."""
         if show_persistence:
             logger.info("\n=== Calculating Persistence Baselines ===")
             
             # Use processed labels data directly to ensure timestamp alignment with model predictions
             logger.info("Loading processed labels data for persistence baseline...")
-            from fencast.utils.paths import PROCESSED_DATA_DIR
-            import pandas as pd
             
             setup_name = self.config.get('setup_name', 'default_setup')
             labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
@@ -506,7 +558,8 @@ class MLWPPlotter:
                 logger.warning(f"Processed labels not found at {labels_file}, using raw data")
                 test_years = self.config['split_years']['test']
                 test_gt = load_ground_truth_data(self.config, test_years)
-            
+
+            # Now plot persistence baselines either per-region or overall
             if self.per_region:
                 # Calculate persistence baseline per-region efficiently
                 regions_to_plot = []
@@ -514,15 +567,19 @@ class MLWPPlotter:
                     main_region_code = region[:3]
                     if region_filter is None or main_region_code in region_filter:
                         regions_to_plot.append(region)
-                
-                colors = plt.cm.Set3(np.linspace(0, 1, len(regions_to_plot)))  # Different colormap for baselines
+
+                colors = plt.cm.Set3(np.linspace(0, 1, max(1, len(regions_to_plot))))  # Different colormap for baselines
                 for i, region in enumerate(regions_to_plot):
                     # Calculate persistence for this region for all lead times at once
                     region_data = test_gt[[region]]
                     # Use None logger to reduce verbosity for per-region calculations
                     region_persistence_results = calculate_persistence_baseline(region_data, persistence_lead_times, None)
                     region_persistence_values = [region_persistence_results[td]['rmse'] for td in persistence_lead_times]
-                    
+
+                    # If normalization requested, divide persistence values by std
+                    if normalize_by_std and normalize_by_std > 0:
+                        region_persistence_values = [v / normalize_by_std for v in region_persistence_values]
+
                     ax.plot(persistence_lead_times, region_persistence_values, 
                            color=colors[i], linestyle=':', alpha=0.7, linewidth=1.5, 
                            marker='s', markersize=3, markerfacecolor=colors[i], markeredgecolor=colors[i])
@@ -531,11 +588,16 @@ class MLWPPlotter:
                 persistence_results = calculate_persistence_baseline(test_gt, persistence_lead_times, logger)
                 persistence_rmse_values = [persistence_results[td]['rmse'] for td in persistence_lead_times]
                 
+                label_p = "Persistence Baseline"
+                # Normalize persistence if requested
+                if normalize_by_std and normalize_by_std > 0:
+                    persistence_rmse_values = [v / normalize_by_std for v in persistence_rmse_values]
+                    label_p += " (normalized)"
                 ax.plot(persistence_lead_times, persistence_rmse_values, 
                        color='red', linestyle=':', alpha=0.7, linewidth=2, 
                        marker='s', markersize=4, markerfacecolor='red', markeredgecolor='red',
-                       label="Persistence Baseline")
-        
+                       label=label_p)
+
         if show_climatology:
             climatology_rmse = calculate_climatology_baseline(self.config)
             ax.axhline(climatology_rmse, color='green', linestyle=':', alpha=0.7,
@@ -554,7 +616,6 @@ def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, model_na
         return pd.DataFrame()
     
     # Load ground truth data
-    from fencast.utils.paths import PROCESSED_DATA_DIR, PROJECT_ROOT
     setup_name = config.get('setup_name', 'default_setup')
     
     # Try to load processed labels
@@ -639,8 +700,6 @@ def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, model_na
 
 def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times: List[int], logger=None) -> pd.DataFrame:
     """Calculate persistence baseline RMSE for each season."""
-    import pandas as pd
-    from fencast.utils.paths import PROJECT_ROOT, PROCESSED_DATA_DIR
     
     setup_name = config.get('setup_name', 'default_setup')
     
