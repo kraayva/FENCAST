@@ -2,11 +2,13 @@
 
 import xarray as xr
 import pandas as pd
+from sklearn.metrics import mean_squared_error
 import logging
+import numpy as np
+from datetime import timedelta
 from datetime import datetime
 from pathlib import Path
-from fencast.utils.paths import LOG_DIR
-
+from fencast.utils.paths import LOG_DIR, RAW_DATA_DIR, PROJECT_ROOT
 
 def setup_logger(prefix: str = "default"):
     """
@@ -68,8 +70,6 @@ def get_latest_study_dir(results_parent_dir: Path, model_type: str) -> Path:
 
 def load_era5_data(var_name: str) -> 'xr.Dataset':
     """Loads ERA5 reference data for a specific variable."""
-    import xarray as xr
-    from fencast.utils.paths import RAW_DATA_DIR
     
     era5_file = RAW_DATA_DIR / f"era5_de_{var_name}.nc"
     if not era5_file.exists():
@@ -80,9 +80,7 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
 
 def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: str) -> float:
     """Get the actual forecast lead time in days from consolidated MLWP file."""
-    import numpy as np
-    import xarray as xr
-    from fencast.utils.paths import RAW_DATA_DIR
+    
     
     # New consolidated file structure: one file per variable with all timedeltas
     mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
@@ -116,9 +114,6 @@ def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: st
 
 def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dataset':
     """Loads MLWP prediction data for a specific variable and timedelta from consolidated file."""
-    import xarray as xr
-    import numpy as np
-    from fencast.utils.paths import RAW_DATA_DIR
     
     # New consolidated file structure: one file per variable with all timedeltas
     mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
@@ -161,11 +156,13 @@ def load_ground_truth_data(config: dict, years: list) -> 'pd.DataFrame':
     Loads, processes, and filters the ground truth (target) data for a specific set of years.
 
     This function handles:
-    - Loading the raw target data CSV.
-    - Applying the 12:00 noon shift to the timestamp index.
+    - Loading the raw target data CSV (timestamps at 00:00).
     - Dropping columns specified in the config.
     - Filtering the data to include only the years specified.
     - Dropping any rows with NaN values.
+    
+    Note: This returns raw data with 00:00 timestamps. For 12:00 timestamps that align
+    with model predictions, use the processed labels files (*_labels_cnn.parquet).
 
     Args:
         config (dict): The project configuration dictionary.
@@ -174,12 +171,10 @@ def load_ground_truth_data(config: dict, years: list) -> 'pd.DataFrame':
     Returns:
         pd.DataFrame: A clean DataFrame of ground truth data for the specified years.
     """
-    import pandas as pd
-    from fencast.utils.paths import PROJECT_ROOT
 
     gt_file = PROJECT_ROOT / config['target_data_raw']
     gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    gt_df.index = gt_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
+    # Note: Raw data has 00:00 timestamps. Use processed labels for 12:00 timestamps.
 
     drop_cols = config.get('data_processing', {}).get('drop_columns', [])
     if drop_cols:
@@ -204,8 +199,6 @@ def calculate_persistence_baseline(data, lead_times, logger=None):
         Single float (if lead_times is int) or dict with lead times as keys and metrics as values:
         {lead_time: {'mse': float, 'rmse': float, 'mae': float, 'samples': int}}
     """
-    from datetime import timedelta
-    import numpy as np
     
     # Handle single lead time input
     if isinstance(lead_times, int):
@@ -283,15 +276,11 @@ def calculate_persistence_baseline(data, lead_times, logger=None):
 
 def calculate_climatology_baseline(config: dict) -> float:
     """Calculates climatology baseline RMSE (same for all lead times)."""
-    import pandas as pd
-    import numpy as np
-    from sklearn.metrics import mean_squared_error
-    from fencast.utils.paths import PROJECT_ROOT
     
     # Load the full raw target dataset
     gt_file = PROJECT_ROOT / config['target_data_raw']
     full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    full_df.index = full_df.index + pd.Timedelta(hours=12)  # Apply noon-shift
+    # Note: Raw data has 00:00 timestamps. Use processed labels for 12:00 timestamps.
     
     # Drop columns to match the model's target
     drop_cols = config.get('data_processing', {}).get('drop_columns', [])

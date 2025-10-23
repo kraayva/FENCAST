@@ -69,8 +69,8 @@ def load_trained_model(study_dir: Path, use_final_model: bool = False, device: s
     if not model_path.exists():
         raise FileNotFoundError(f"Model file not found at {model_path}")
 
-    checkpoint = torch.load(model_path, map_location=torch.device(device))
-    model_class = DynamicCNN if checkpoint['model_args']['model_type'] == 'cnn' else DynamicFFNN
+    checkpoint = torch.load(model_path, map_location=torch.device(device), weights_only=False)
+    model_class = DynamicCNN #if checkpoint['model_args']['model_type'] == 'cnn' else DynamicFFNN
     model = model_class(**checkpoint['model_args'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()

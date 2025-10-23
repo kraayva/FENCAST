@@ -17,33 +17,34 @@ cfm = load_config("datapp_de")
 
 #%%
 # ---------------------------------------
-# ------------- PANGU DATA --------------
+# ------------- IFS DATA ----------------
 # ---------------------------------------
 
-# load PANGU data
-ds_pangu = xr.open_zarr(cfg["gsWB2_pangu_data"], decode_timedelta=True)
+# load IFS data
+ds_ifs = xr.open_zarr(cfg["gsWB2_ifs_data"], decode_timedelta=True)
 
 # cut out region
-new_ds_pangu = (
-    ds_pangu
-    .sel(latitude=slice(cfm["feature_region"]["lat_max"], cfm["feature_region"]["lat_min"]),
+new_ds_ifs = (
+    ds_ifs
+    .sel(latitude=slice(cfm["feature_region"]["lat_min"], cfm["feature_region"]["lat_max"]),
          longitude=slice(cfm["feature_region"]["lon_min"], cfm["feature_region"]["lon_max"]))
     [cfm["feature_variables"].keys()]
     .sel(level=cfm["feature_level"])
-    .sel(time=ds_pangu['time'].dt.hour == 12)
+    .sel(time=ds_ifs['time'].dt.hour == 12)
 )
+print(new_ds_ifs)
 
 # Select all required timedeltas at once for each variable
-pangu_datasets = {}
-timedeltas = cfm["mlwp_timedelta"]
+ifs_datasets = {}
+timedeltas = cfm["ifs_timedelta"]
 for var in cfm["feature_variables"].keys():
     # Select all timedeltas for the variable
-    pangu_datasets[var] = new_ds_pangu[var][:, timedeltas, :, :]
+    ifs_datasets[var] = new_ds_ifs[var][:, timedeltas, :, :]
 #%% download the datasets
-for var in pangu_datasets.keys():
+for var in ifs_datasets.keys():
     print(f"downloading variable: {var}")
-    output_path = cfg["data_raw_dir"] + f"/pangu_de_{var}.nc"
-    ds = pangu_datasets[var]
+    output_path = cfg["data_raw_dir"] + f"/ifs_{var}.nc"
+    ds = ifs_datasets[var]
     if not os.path.exists(output_path):
         # Load data into memory first (with progress)
         print("📊 Loading data into memory...")

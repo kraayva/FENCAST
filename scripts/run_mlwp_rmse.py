@@ -19,21 +19,18 @@ def main():
         description="Calculate weather prediction RMSE for MLWP models",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
+    parser.add_argument('config', nargs='?', 
+                        default='datapp_de', 
+                        help='Configuration file name (default: datapp_de)')
     parser.add_argument('--output-file', '-o', 
                        default='weather_rmse_results.csv',
                        help='Output CSV file name')
-    parser.add_argument('--mlwp-models', nargs='+',
-                       default=['pangu'],
-                       help='MLWP model names to evaluate')
+    parser.add_argument('--mlwp-model', '-m',
+                       default='pangu',
+                       help='MLWP model name to evaluate')
     parser.add_argument('--timedeltas', nargs='+', type=int,
-                       default=[0, 1, 2, 3, 5, 6, 7, 10, 14],
+                       default=None,
                        help='Forecast lead times in days')
-    parser.add_argument('--max-years', type=int, default=5,
-                       help='Maximum number of years to process for efficiency')
-    parser.add_argument('--variables', nargs='+',
-                       default=['t', 'q', 'u', 'v', 'z'],
-                       help='Weather variables to evaluate')
     parser.add_argument('--levels', nargs='+', type=int,
                        default=[1000, 850, 500],
                        help='Pressure levels to evaluate')
@@ -53,8 +50,8 @@ def main():
     results_dir.mkdir(exist_ok=True)
     
     # Create filename with MLWP model names
-    mlwp_names = "_".join(args.mlwp_models)
-    output_filename = f"weather_rmse_{mlwp_names}.csv"
+    mlwp_name = args.mlwp_model
+    output_filename = f"weather_rmse_{mlwp_name}.csv"
     output_path = results_dir / output_filename
     
     # Calculate weather RMSE
@@ -62,10 +59,8 @@ def main():
         calculate_mlwp_weather_rmse(
             config=config,
             output_file=output_path,
-            mlwp_models=args.mlwp_models,
+            mlwp_model=args.mlwp_model,
             timedeltas=args.timedeltas,
-            max_years=args.max_years,
-            variables=args.variables,
             pressure_levels=args.levels
         )
         logger.info(f"Weather RMSE calculation completed. Results saved to: {output_path}")

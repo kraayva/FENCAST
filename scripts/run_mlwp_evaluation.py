@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import pandas as pd
 import xarray as xr
-import joblib
 import json
 from pathlib import Path
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -47,13 +46,22 @@ def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.
 
 
 def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, study_dir: Path, 
-                          mlwp_name: str, timedelta_str: str, final_model = False) -> dict:
+                          mlwp_name: str, timedelta: int, final_model = False) -> dict:
     """
     Evaluates a trained CNN model on MLWP forecast data for a specific lead time.
     
+    Args:
+        config (dict): Configuration dictionary.
+        model (nn.Module): Trained CNN model.
+        setup_name (str): Name of the experimental setup.
+        study_dir (Path): Directory of the study containing the model.
+        mlwp_name (str): Name of the MLWP model to evaluate.
+        timedelta (int): Forecast lead time in days (e.g., 1).
+        final_model (bool): Whether to use the final model trained on all data.
     Returns:
         dict: Evaluation metrics (RMSE, MAE, sample count)
     """
+    timedelta_str = f"td{timedelta:02d}"
     run_name = f"{mlwp_name}_{timedelta_str}"
     logger.info(f"\n--- Evaluating model on: {run_name} ---")
 
@@ -105,8 +113,19 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
     # 3. ALIGN WITH GROUND TRUTH AND EVALUATE
     logger.info("Aligning predictions with ground truth and evaluating...")
     
+    # Load processed labels (already at correct 12:00 timestamps) if available
+    labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
+    if not labels_file.exists():
+        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
+    
+    if labels_file.exists():
+        logger.info(f"Loading processed labels from: {labels_file}")
+        gt_df = pd.read_parquet(labels_file)
+    else:
+        logger.warning("Processed labels not found, falling back to raw data (may have timestamp misalignment)")
+        gt_df = load_ground_truth_data(config, list(range(1990, 2024)))
+    
     # Create predictions DataFrame
-    gt_df = load_ground_truth_data(config, list(range(1990, 2024))) # Load all years for max overlap
     preds_df = pd.DataFrame(predictions_np, index=timestamps, columns=gt_df.columns)
     
     # Find common timestamps and align
@@ -222,21 +241,20 @@ def main():
 
     # Get experiment parameters from config or command line
     mlwp_names = args.mlwp_models if args.mlwp_models else config.get('mlwp_names', [])
-    mlwp_timedeltas = args.timedeltas if args.timedeltas else config.get('mlwp_timedelta', [])
 
-    if not mlwp_names or not mlwp_timedeltas:
-        logger.error("No MLWP models or timedeltas specified. Check config or use --mlwp-models and --timedeltas arguments.")
+    if not mlwp_names:
+        logger.error("No MLWP models specified. Check config or use --mlwp-models argument.")
         return
-
-    logger.info(f"Evaluating {len(mlwp_names)} MLWP models on {len(mlwp_timedeltas)} forecast lead times")
 
     # Loop through all combinations and run evaluation
     for mlwp in mlwp_names:
+        mlwp_timedeltas = args.timedeltas if args.timedeltas else config.get('mlwp_timedelta_days', []).get(mlwp, [])
+        logger.info(f"\nEvaluating MLWP model: {mlwp} on {len(mlwp_timedeltas)} lead times")
         for td in mlwp_timedeltas:
             # Format timedelta string like 'td01', 'td02'
             td_str = f"td{td:02d}"
             try:
-                metrics = evaluate_model_on_mlwp(config, model, setup_name, study_dir, mlwp, td_str, final_model=args.final_model)
+                metrics = evaluate_model_on_mlwp(config, model, setup_name, study_dir, mlwp, td, final_model=args.final_model)
             except Exception as e:
                 logger.error(f"Error evaluating {mlwp} {td_str}: {e}")
                 continue
