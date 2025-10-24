@@ -29,8 +29,7 @@ def main():
                        default='pangu',
                        help='MLWP model name to evaluate')
     parser.add_argument('--timedeltas', nargs='+', type=int,
-                       default=None,
-                       help='Forecast lead times in days')
+                       help='Forecast lead times in indices, default: takes from config')
     parser.add_argument('--levels', nargs='+', type=int,
                        default=[1000, 850, 500],
                        help='Pressure levels to evaluate')

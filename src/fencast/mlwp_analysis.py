@@ -13,7 +13,7 @@ from fencast.utils.tools import setup_logger, load_era5_data, load_mlwp_data
 logger = setup_logger("mlwp_analysis")
 
 
-def calculate_variable_rmse(era5_data: xr.Dataset, mlwp_data: xr.Dataset, var_name: str, config: dict) -> dict:
+def calculate_variable_rmse(era5_data: xr.Dataset, mlwp_data: xr.Dataset, var_name: str, config: dict, td: int) -> dict:
     """
     Calculates normalized RMSE between ERA5 and MLWP data for a specific variable across all levels.
     Each variable/level combination is normalized by ERA5 statistics to make them comparable.
@@ -25,6 +25,9 @@ def calculate_variable_rmse(era5_data: xr.Dataset, mlwp_data: xr.Dataset, var_na
     var_key = var_name
     if var_name in config['feature_var_names']:
         var_key = config['feature_var_names'][var_name]
+
+    # shift mlwp time by forecast lead time to align with ERA5
+    mlwp_data['time'] = mlwp_data['time'] + np.timedelta64(td * 24, 'h')
     
     # Align datasets by time - find common timestamps
     era5_times = pd.to_datetime(era5_data.time.values)
@@ -194,7 +197,7 @@ def calculate_mlwp_weather_rmse(config: dict,
         
     # Get experiment parameters (use provided args or config defaults)
     if timedeltas is not None:
-        config['mlwp_timedelta_days'][mlwp_name] = timedeltas
+        config['mlwp_timedelta_days'] = timedeltas
     
     feature_var_names = config.get('feature_var_names', {})
         
@@ -204,28 +207,28 @@ def calculate_mlwp_weather_rmse(config: dict,
         logger.info(f"Using provided pressure levels: {pressure_levels}")
     feature_levels = config.get('feature_level', [])
     
-    if not mlwp_name or not config['mlwp_timedelta_days'][mlwp_name]:
-        logger.error("Config keys 'mlwp_name' or 'mlwp_timedelta' are missing or empty.")
+    if not mlwp_name or not config['mlwp_timedelta_idx']:
+        logger.error("Config keys 'mlwp_name' or 'mlwp_timedelta_idx' are missing or empty.")
         return pd.DataFrame()
         
     if not feature_var_names:
         logger.error("Config key 'feature_var_names' is missing or empty.")
         return pd.DataFrame()
     
-    logger.info(f"Calculating RMSE for {mlwp_name}, {len(config['mlwp_timedelta_days'][mlwp_name])} timedeltas, {len(feature_var_names)} variables")
+    logger.info(f"Calculating RMSE for {mlwp_name}, {len(config['mlwp_timedelta_idx'])} timedeltas, {len(feature_var_names)} variables")
     
     all_results = []
     
     # Loop through all combinations
-    for td, i in enumerate(config['mlwp_timedelta_days'][mlwp_name]):
-        actual_lead_time_days = td + 1
-        td_str = f"td{(actual_lead_time_days):02d}"
+    for td_, i in enumerate(config['mlwp_timedelta_idx']):
+        td = td_ + 1
+        td_str = f"td{(td):02d}"
         logger.info(f"\n--- Processing {mlwp_name} lead time {td_str} days ---")
                 
         result_row = {
             'mlwp_model': mlwp_name,
-            'timedelta_days': actual_lead_time_days,
-            'timedelta_hours': actual_lead_time_days * 24,
+            'timedelta_days': td,
+            'timedelta_hours': td * 24,
             'timedelta_file_index': i  # Keep original config index for reference
         }
         
@@ -240,7 +243,7 @@ def calculate_mlwp_weather_rmse(config: dict,
                 mlwp_data = load_mlwp_data(mlwp_name, td_str, var_name)
                 
                 # Calculate RMSE for this variable
-                variable_rmse = calculate_variable_rmse(era5_data, mlwp_data, var_name, config)
+                variable_rmse = calculate_variable_rmse(era5_data, mlwp_data, var_name, config, td)
                 
                 # Add to result row
                 result_row.update(variable_rmse)

@@ -160,6 +160,4 @@ mlwp_timedeltas:
   ifs: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40]
 
 # lead times indices for evaluation (make sure that these correspond to forecasting time 1d, 2d, ...)
-mlwp_timedelta_days: 
-  pangu: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-  ifs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+mlwp_timedelta_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
