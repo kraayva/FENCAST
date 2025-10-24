@@ -756,12 +756,16 @@ def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times
 class MLWPSeasonalPlotter:
     """Plotting class for seasonal MLWP evaluation results."""
     
-    def __init__(self, config: dict, study_dir: Path, mlwp_name: str = 'pangu', model_name: str = "best_model"):
+    def __init__(self, config: dict, study_dir: Path, mlwp_names: list = None, model_name: str = "best_model"):
         self.config = config
         self.study_dir = study_dir
-        self.mlwp_name = mlwp_name
+        self.mlwp_names = mlwp_names
         self.model_name = model_name
         self.energy_data = load_energy_prediction_data_seasonal(study_dir, config, model_name)
+        
+        # Filter to only the requested MLWP models
+        if not self.energy_data.empty and 'mlwp_model' in self.energy_data.columns:
+            self.energy_data = self.energy_data[self.energy_data['mlwp_model'].isin(self.mlwp_names)]
         
     def plot_seasonal_results(self, 
                              persistence_lead_times: Optional[List[int]] = None,

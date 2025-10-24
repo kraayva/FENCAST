@@ -13,9 +13,7 @@ from fencast.models import DynamicCNN, DynamicFFNN
 logger = setup_logger("experiment_management")
 
 
-def load_best_params_from_study(
-    results_parent_dir: Path, model_type: str, study_name: str = 'latest'
-) -> Dict[str, Any]:
+def load_best_params_from_study(results_parent_dir: Path, model_type: str, study_name: str = 'latest') -> Dict[str, Any]:
     """
     Loads the best hyperparameters from a specified Optuna study.
 

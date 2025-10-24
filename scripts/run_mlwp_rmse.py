@@ -59,7 +59,7 @@ def main():
         calculate_mlwp_weather_rmse(
             config=config,
             output_file=output_path,
-            mlwp_model=args.mlwp_model,
+            mlwp_name=args.mlwp_model,
             timedeltas=args.timedeltas,
             pressure_levels=args.levels
         )
