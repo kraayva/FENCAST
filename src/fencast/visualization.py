@@ -192,8 +192,6 @@ class MLWPPlotter:
         Returns (mean, std) tuple for the test set used in plotting.
         If processed labels are not available, returns (None, None).
         """
-        from fencast.utils.paths import PROCESSED_DATA_DIR
-        import pandas as pd
 
         setup_name = self.config.get('setup_name', 'default_setup')
         labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
@@ -238,7 +236,7 @@ class MLWPPlotter:
             show_weather_variables: Whether to show individual weather variable RMSE
             persistence_lead_times: List of lead times for persistence (default: 1-10)
             figsize: Figure size tuple
-            save_path: Path to save the plot (default: 
+            save_path: Path to save the plot (default: results/{setup_name})
         """
         if self.energy_data.empty:
             logger.error("No energy prediction data available for plotting")

@@ -115,7 +115,6 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
 def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dataset':
     """Loads MLWP prediction data for a specific variable and timedelta from consolidated file."""
     
-    # New consolidated file structure: one file per variable with all timedeltas
     mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
     if not mlwp_file.exists():
         raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")

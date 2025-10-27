@@ -19,21 +19,21 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch.nn as nn
 
 from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
-from fencast.utils.tools import setup_logger, get_latest_study_dir, load_ground_truth_data
+from fencast.utils.tools import setup_logger, get_latest_study_dir, load_ground_truth_data, load_mlwp_data
 from fencast.utils.experiment_management import load_trained_model
 
 
-def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.Dataset:
-    from fencast.utils.tools import load_mlwp_data
+def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: int) -> xr.Dataset:
     
     feature_var_names = config['feature_var_names']
-    logger.info(f"Loading MLWP data for {mlwp_name} {timedelta}...")
+    logger.info(f"Loading MLWP data for {mlwp_name} time delta {timedelta} days ...")
     
     # Load each variable using the existing load_mlwp_data function
+    timedelta_str = f"{timedelta:02d}"
     datasets = []
     for var_name in feature_var_names.keys():
         try:
-            ds = load_mlwp_data(mlwp_name, timedelta, var_name)
+            ds = load_mlwp_data(mlwp_name, timedelta_str, var_name)
             datasets.append(ds)
         except FileNotFoundError as e:
             logger.error(f"Missing MLWP data file for variable {var_name}: {e}")
@@ -42,6 +42,11 @@ def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: str) -> xr.
     # Merge all variables and rename according to config
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
+
+    # shift time coordinates by forecast lead time
+    time_delta_hours = np.timedelta64(timedelta * 24, 'h')
+    weather_data['time'] = weather_data['time'] + time_delta_hours
+
     return weather_data
 
 
@@ -67,7 +72,7 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
 
     # 1. LOAD AND PROCESS THE MLWP FEATURE DATA
     try:
-        mlwp_data_xr = load_mlwp_forecast_data(config, mlwp_name, timedelta_str)
+        mlwp_data_xr = load_mlwp_forecast_data(config, mlwp_name, timedelta)
     except FileNotFoundError as e:
         logger.error(f"Could not evaluate '{run_name}'. Reason: {e}")
         return {'rmse': None, 'mae': None, 'sample_count': 0}
@@ -167,25 +172,16 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
                         'mae': region_mae,
                         'sample_count': len(clean_gt[region].dropna())
                     }
-            
-            # Get actual forecast lead time from MLWP file
-            try:
-                from fencast.utils.tools import get_mlwp_forecast_lead_time
-                actual_lead_time_days = get_mlwp_forecast_lead_time(mlwp_name, timedelta_str, 'u_component_of_wind')
-            except Exception:
-                # Fallback calculation
-                td_num = int(timedelta_str.replace('td', ''))
-                actual_lead_time_days = (td_num + 1) * 6 / 24
-            
+                        
             metrics = {
                 'rmse': rmse, 
                 'mae': mae, 
                 'sample_count': len(clean_gt),
-                'forecast_lead_time_days': actual_lead_time_days,
-                'forecast_lead_time_hours': actual_lead_time_days * 24,
+                'forecast_lead_time_days': timedelta,
+                'forecast_lead_time_hours': timedelta * 24,
                 'region_metrics': region_metrics
             }
-            logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}, Lead time = {actual_lead_time_days:.2f} days")
+            logger.info(f"Evaluation complete for {run_name}: RMSE = {rmse:.4f}, MAE = {mae:.4f}, Lead time = {timedelta:.2f} days")
 
     # 4. SAVE RESULTS
     if final_model:
@@ -248,7 +244,7 @@ def main():
 
     # Loop through all combinations and run evaluation
     for mlwp in mlwp_names:
-        mlwp_timedeltas = args.timedeltas if args.timedeltas else config.get('mlwp_timedelta_days', []).get(mlwp, [])
+        mlwp_timedeltas = args.timedeltas if args.timedeltas else config.get('mlwp_timedelta_days', [])
         logger.info(f"\nEvaluating MLWP model: {mlwp} on {len(mlwp_timedeltas)} lead times")
         for td in mlwp_timedeltas:
             # Format timedelta string like 'td01', 'td02'

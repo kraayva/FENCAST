@@ -152,7 +152,7 @@ features:
     exclude_patterns: ['day_of_year'] # Patterns to exclude from normalization
 
 # MLWP model output data:
-mlwp_names: ['ifs']
+mlwp_names: ['pangu', 'ifs']
 
 # timedeltas for download
 mlwp_timedeltas: 
@@ -161,3 +161,4 @@ mlwp_timedeltas:
 
 # lead times indices for evaluation (make sure that these correspond to forecasting time 1d, 2d, ...)
 mlwp_timedelta_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+mlwp_timedelta_days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
