@@ -41,7 +41,7 @@ logger.info(f"Loaded IFS data: {new_ds_ifs}")
 # Select all required timedeltas at once for each variable
 ifs_datasets = {}
 timedeltas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-for var in cfm["feature_variables"].keys():
+for var in ['specific_humidity']:
     # Select all timedeltas for the variable
     ifs_datasets[var] = new_ds_ifs[var][:, timedeltas, :, :]
 # download the datasets

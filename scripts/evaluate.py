@@ -1,5 +1,7 @@
 # scripts/evaluate.py
 
+'''Entry point for evaluating a trained model on the test set (only ERA5 data).'''
+
 import torch
 from torch.utils.data import DataLoader
 import numpy as np

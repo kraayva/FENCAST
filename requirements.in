@@ -25,3 +25,4 @@ plotly
 pip-tools
 optuna-dashboard
 seaborn
+geopandas

@@ -12,3 +12,6 @@ gsWB2_era5_data: gs://weatherbench2/datasets/era5/
 gsWB2_pangu_data: gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr
 gsWB2_neuralgcm_data: gs://weatherbench2/datasets/neuralgcm_deterministic/2020-512x256.zarr/
 gsWB2_ifs_data: gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr
+
+## DEFAULTS
+default_config: datapp_de

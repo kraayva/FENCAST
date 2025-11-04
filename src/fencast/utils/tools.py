@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.metrics import mean_squared_error
 import logging
 import numpy as np
+import argparse
 from datetime import timedelta
 from datetime import datetime
 from pathlib import Path
@@ -60,7 +61,7 @@ def setup_logger(prefix: str = "default"):
     return logger
 
 
-def get_latest_study_dir(results_parent_dir: Path, model_type: str) -> Path:
+def get_latest_study_dir(results_parent_dir: Path, model_type: str = "cnn") -> Path:
     prefix = f"study_{model_type}"
     model_studies = [d for d in results_parent_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
     if not model_studies:
@@ -304,3 +305,4 @@ def calculate_climatology_baseline(config: dict) -> float:
     climatology_preds = merged[test_gt.columns]
     
     return np.sqrt(mean_squared_error(test_gt, climatology_preds))
+

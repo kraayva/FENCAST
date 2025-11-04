@@ -51,6 +51,8 @@ certifi==2025.8.3
     #   httpcore
     #   httpx
     #   netcdf4
+    #   pyogrio
+    #   pyproj
     #   requests
 cffi==2.0.0
     # via argon2-cffi-bindings
@@ -125,6 +127,8 @@ fsspec==2025.9.0
 gcloud==0.18.3
     # via -r requirements.in
 gcsfs==2025.9.0
+    # via -r requirements.in
+geopandas==1.1.1
     # via -r requirements.in
 google-api-core==2.25.1
     # via
@@ -320,14 +324,17 @@ numpy==2.3.2
     #   cftime
     #   contourpy
     #   fastparquet
+    #   geopandas
     #   matplotlib
     #   netcdf4
     #   numcodecs
     #   optuna
     #   pandas
+    #   pyogrio
     #   scikit-learn
     #   scipy
     #   seaborn
+    #   shapely
     #   torchvision
     #   xarray
     #   zarr
@@ -346,6 +353,7 @@ packaging==25.0
     #   build
     #   dask
     #   fastparquet
+    #   geopandas
     #   ipykernel
     #   jupyter-events
     #   jupyter-server
@@ -356,11 +364,13 @@ packaging==25.0
     #   optuna
     #   optuna-dashboard
     #   plotly
+    #   pyogrio
     #   xarray
     #   zarr
 pandas==2.3.2
     # via
     #   fastparquet
+    #   geopandas
     #   seaborn
     #   xarray
 pandocfilters==1.5.1
@@ -420,10 +430,14 @@ pygments==2.19.2
     #   ipython-pygments-lexers
     #   jupyter-console
     #   nbconvert
+pyogrio==0.11.1
+    # via geopandas
 pyparsing==3.2.3
     # via
     #   httplib2
     #   matplotlib
+pyproj==3.7.2
+    # via geopandas
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -505,6 +519,8 @@ seaborn==0.13.2
     # via -r requirements.in
 send2trash==1.8.3
     # via jupyter-server
+shapely==2.1.2
+    # via geopandas
 six==1.17.0
     # via
     #   gcloud
