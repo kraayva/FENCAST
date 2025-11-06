@@ -42,7 +42,7 @@ def load_and_prepare_data(
     feature_var_names = config['feature_var_names']
     feature_files = [RAW_DATA_DIR / f'{feature_prefix}_{var}.nc' for var in feature_var_names.keys()]
     logger.info(f"Loading {len(feature_files)} feature files")
-    datasets = [xr.open_dataset(f) for f in feature_files]
+    datasets = [xr.open_dataset(f).sortby(['latitude', 'longitude']) for f in feature_files]
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
     logger.info("Weather data successfully loaded and merged.")

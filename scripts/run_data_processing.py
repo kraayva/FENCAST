@@ -41,7 +41,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool, f
             labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
         elif model_target == 'cnn':
             features_path = PROCESSED_DATA_DIR / f"{setup_name}_features_cnn.npz"
-            labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet" # Labels are likely still 2D
+            labels_path = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
 
         # Check for existing files and prompt for overwrite if necessary
         should_save = True
@@ -84,9 +84,9 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--model-target', '-m',
-        required=True,
+        default='cnn',
         choices=['ffnn', 'cnn'],
-        help='The target model architecture to process data for.'
+        help='The target model architecture to process data for (default: cnn).'
     )
     parser.add_argument(
         '--force-save', '-f',
@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
     if args.feature_prefix == 'all_mlwp':
         config = load_config(args.config)
-        prefixes = [f"{name}_td{td:02d}_de" for name in config['mlwp_names'] for td in config['mlwp_timedelta']]
+        prefixes = [f"{name}_td{td:02d}_de" for name in config['mlwp_names'] for td in config['mlwp_timedelta_days']]
 
         run_data_processing(
         config_name=args.config, 

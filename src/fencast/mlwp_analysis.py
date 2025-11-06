@@ -26,13 +26,19 @@ def calculate_variable_rmse(era5_data: xr.Dataset, mlwp_data: xr.Dataset, var_na
     if var_name in config['feature_var_names']:
         var_key = config['feature_var_names'][var_name]
 
+    mlwp_d = mlwp_data.copy()
+
+    # select test time range
+    test_years = config.get('split_years', {}).get('test', [])
+    mlwp_d = mlwp_d.sel(time=mlwp_d['time'].dt.year.isin(test_years))
+
     # shift mlwp time by forecast lead time to align with ERA5
-    mlwp_data['time'] = mlwp_data['time'] + np.timedelta64(td * 24, 'h')
-    
+    mlwp_d['time'] = mlwp_d['time'] + np.timedelta64(td * 24, 'h')
+
     # Align datasets by time - find common timestamps
     era5_times = pd.to_datetime(era5_data.time.values)
-    mlwp_times = pd.to_datetime(mlwp_data.time.values)
-    
+    mlwp_times = pd.to_datetime(mlwp_d.time.values)
+
     # Remove timezone info if present
     if era5_times.tz is not None:
         era5_times = era5_times.tz_localize(None)
@@ -49,7 +55,7 @@ def calculate_variable_rmse(era5_data: xr.Dataset, mlwp_data: xr.Dataset, var_na
     
     # Select common time range
     era5_aligned = era5_data.sel(time=common_times)
-    mlwp_aligned = mlwp_data.sel(time=common_times)
+    mlwp_aligned = mlwp_d.sel(time=common_times)
     
     # Get the variable data (use original variable name for data access)
     if var_key in era5_aligned:

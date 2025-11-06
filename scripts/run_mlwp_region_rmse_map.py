@@ -11,9 +11,13 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 from fencast.utils.paths import load_config
 
 
-def create_region_scp_rmse_plots(time_deltas: list[int] = list(range(1, 10)), config: dict = None, logger=None, study_dir: Path = None, model_type: str = "final_model", mlwp_name: str = "pangu"):
+def create_region_scp_rmse_maps(time_deltas: list[int] = list(range(1, 10)), 
+                                config: dict = None, logger=None, 
+                                study_dir: Path = None, 
+                                model_type: str = "final_model", 
+                                mlwp_name: str = "pangu"):
 
-    output_dir = study_dir / model_type / "region_scp_rmse_plots"
+    output_dir = study_dir / model_type / "region_scp_rmse_maps"
     os.makedirs(output_dir, exist_ok=True)
 
     if not config:
@@ -83,8 +87,8 @@ if __name__ == "__main__":
     
     parser.add_argument('--study-name', default='latest',
                         help='Study name to load results from (default: "latest")')
-    parser.add_argument('--mlwp', dest='mlwp_name', default='pangu',
-                        help='Name of the MLWP to use for labeling (default: "pangu")')
+    parser.add_argument('--mlwp', default=None,
+                        help='Name of the MLWP to use for labeling (default: "pangu, ifs")')
     args = parser.parse_args()
 
     cfm = load_config(args.config)
@@ -95,6 +99,15 @@ if __name__ == "__main__":
     else:
         study_dir = Path("results") / cfm.get("setup_name") / args.study_name
 
-    logger = setup_logger("region_scp_rmse_plot")
+    logger = setup_logger("region_scp_rmse_map")
     logger.info(f"Using study directory: {study_dir}")
-    create_region_scp_rmse_plots(time_deltas=args.time_deltas, config=cfm, logger=logger, study_dir=study_dir, mlwp_name=args.mlwp_name)
+
+    if not args.mlwp:
+        mlwp_names = ["pangu", "ifs"]
+
+    for n in mlwp_names:
+        create_region_scp_rmse_maps(time_deltas=args.time_deltas, 
+                                    config=cfm, 
+                                    logger=logger, 
+                                    study_dir=study_dir, 
+                                    mlwp_name=n)

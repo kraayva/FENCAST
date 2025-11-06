@@ -73,10 +73,14 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
     """Loads ERA5 reference data for a specific variable."""
     
     era5_file = RAW_DATA_DIR / f"era5_de_{var_name}.nc"
+
+    # sort latitude and longitude to ensure consistent ordering
+    ds = xr.open_dataset(era5_file)
+    ds = ds.sortby(['latitude', 'longitude'])
     if not era5_file.exists():
         raise FileNotFoundError(f"ERA5 reference file not found: {era5_file}")
-    
-    return xr.open_dataset(era5_file)
+
+    return ds
 
 
 #def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: str) -> float:
@@ -113,7 +117,7 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
         ds.close()
 
 
-def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dataset':
+def load_mlwp_data(mlwp_name: str, td_days: int, var_name: str) -> 'xr.Dataset':
     """Loads MLWP prediction data for a specific variable and timedelta from consolidated file."""
     
     mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
@@ -123,11 +127,10 @@ def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dat
     # Load the full dataset
     ds = xr.open_dataset(mlwp_file)
     
-    # Extract timedelta index from string (e.g., "td03" -> 3)
-    td_index = int(timedelta_str.replace('td', '').lstrip('0') or '0')
-    
-    # Convert to days for selection (td_index corresponds to days: td03 = 3 days)
-    target_timedelta = np.timedelta64(td_index, 'D')
+    target_timedelta = np.timedelta64(td_days, 'D')
+
+    # sort latitude and longitude to ensure consistent ordering
+    ds = ds.sortby(['latitude', 'longitude'])
     
     try:
         # Select the specific timedelta from the consolidated file
@@ -144,7 +147,7 @@ def load_mlwp_data(mlwp_name: str, timedelta_str: str, var_name: str) -> 'xr.Dat
         ds.close()
         available_tds = ds.prediction_timedelta.values
         available_days = [float(td / np.timedelta64(1, 'D')) for td in available_tds]
-        raise ValueError(f"Timedelta {td_index} days not found in {mlwp_file}. "
+        raise ValueError(f"Timedelta {td_days} days not found in {mlwp_file}. "
                         f"Available timedeltas: {available_days} days") from e
     except Exception as e:
         ds.close()

@@ -11,8 +11,6 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
 
-logger = setup_logger("final_training")
-
 def run_training(config: dict, model_type: str, params: dict, study_dir: Path, use_all_data: bool = False) -> dict:
     """
     Main function to run the model training and validation process using a given set of hyperparameters.
@@ -88,8 +86,8 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--model-type', '-m',
-        required=True,
         choices=['ffnn', 'cnn'],
+        default='cnn',
         help='The model architecture to train.'
     )
     parser.add_argument(
@@ -108,6 +106,11 @@ if __name__ == '__main__':
     config = load_config(args.config)
     setup_name = config.get('setup_name', 'default_setup')
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
+
+    if args.final_run:
+        logger = setup_logger("final_training")
+    else:
+        logger = setup_logger("training")
 
     logger.info("--- Loading best hyperparameters from Optuna study ---")
     params, study_dir = load_best_params_from_study(

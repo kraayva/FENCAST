@@ -188,7 +188,10 @@ def evaluate(config_name: str, model_type: str, study_name: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate a trained model on the test set.')
     parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--model-type', '-m', required=True, choices=['ffnn', 'cnn'], help='The model architecture to evaluate.')
+    parser.add_argument('--model-type', '-m',
+                        choices=['ffnn', 'cnn'], 
+                        default='cnn',
+                        help='The model architecture to evaluate.')
     parser.add_argument('--study-name', '-s', default='latest', help='Study directory to use for saving plots (default: latest for the given model-type).')
     args = parser.parse_args()
     evaluate(config_name=args.config, model_type=args.model_type, study_name=args.study_name)
