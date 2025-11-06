@@ -16,16 +16,30 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
     ## Add arguments based on the provided list
     if 'config' in arguments:
         default_config = cfg.get("default_config", "global")
-        parser.add_argument('config', nargs='?', default=default_config, help=f"Configuration file name (default: {default_config})")
+        parser.add_argument('config', nargs='?', 
+                            default=default_config, 
+                            help=f"Configuration file name (default: {default_config})")
 
     if 'timedeltas' in arguments:
         parser.add_argument('--time-deltas', nargs='+', type=int, default=list(range(1, 11)),
                             help='List of time deltas in days (default: 1-10)')
     
-    if 'mlwp_name' in arguments:
-        parser.add_argument('--mlwp', dest='mlwp_name', default='pangu',
-                            help='Name of the MLWP to use (default: "pangu")')
+    if 'wpm_names' in arguments:
+        parser.add_argument('--wpm', nargs='+', default=['pangu'],
+                            help='List of weather prediction model names (default: ["pangu"])')
+
+    if 'study_name' in arguments:
+        parser.add_argument('--study-name', default='latest',
+                            help='Study name to load results from (default: "latest")')
+        
+    if 'model_type' in arguments:
+        parser.add_argument('--model-type', default='final_model',
+                            help='Type of model to use (default: "final_model")')
     
+    ## Flags
+
     if 'override' in arguments:
         parser.add_argument('--override', '-o', action='store_true',
                             help='Flag to override existing files if they exist')
+        
+    return parser

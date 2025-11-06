@@ -90,7 +90,7 @@ tuning:
   
   activation_name: 'ELU'
   scheduler_name: 'ReduceLROnPlateau'
-  scheduler_patience: 3 
+  scheduler_patience: 4
   scheduler_factor: 0.2
 
   weight_decay:
@@ -134,7 +134,9 @@ cnn_tuning:
     min: 0.01
     max: 0.2
     log_scale: true
-  n_conv_layers: 3
+  n_conv_layers:
+    type: list
+    values: [3, 5]
   filters:
     type: int
     min: 16
@@ -142,7 +144,7 @@ cnn_tuning:
     step: 16
   kernel_size: 
     type: list
-    values: [3, 5]
+    values: [3, 4, 5]
 
 # Feature Engineering Settings
 features:

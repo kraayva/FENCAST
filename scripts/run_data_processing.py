@@ -78,7 +78,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool, f
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process raw data for model training.')
     parser.add_argument(
-        '--config', '-c', 
+        '--config', '-c',
         default='datapp_de',
         help='Configuration file name (default: datapp_de)'
     )
@@ -106,7 +106,7 @@ if __name__ == '__main__':
         prefixes = [f"{name}_td{td:02d}_de" for name in config['mlwp_names'] for td in config['mlwp_timedelta_days']]
 
         run_data_processing(
-        config_name=args.config, 
+        config_name=args.config,
         model_target=args.model_target,
         force_save=args.force_save,
         features_prefix=prefixes

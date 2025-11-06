@@ -89,7 +89,7 @@ class DynamicCNN(nn.Module):
 
         # 4. Build the Regression Head for processing combined features
         # ----------------------------------------------------------------------
-        dense_layers_list = self.params.get('dense_layers', [256, 128]) # Use tuned layers or a default
+        dense_layers_list = self.params.get('dense_layers', [512, 256, 128]) # Use tuned layers or a default
         dropout_rate = self.params['dropout_rate']
         output_size = self.config['target_size']
         num_temporal_features = 2 # day_of_year_sin, day_of_year_cos
@@ -132,3 +132,4 @@ class DynamicCNN(nn.Module):
         predictions = self.regression_head(combined_features)
         
         return predictions
+    
