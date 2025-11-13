@@ -2,12 +2,11 @@
 
 import argparse
 from pathlib import Path
-import numpy as np # Import numpy for saving arrays
-import xarray as xr
+import numpy as np
 
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, RAW_DATA_DIR
-from fencast.data_processing import load_and_prepare_data, specific_humidity_to_relative_humidity
-from fencast.utils.tools import setup_logger, load_mlwp_data, load_era5_data
+from fencast.data_processing import load_and_prepare_data
+from fencast.utils.tools import setup_logger
 
 def run_data_processing(config_name: str, model_target: str, force_save: bool, features_prefix: str = "era5_de"):
     """
@@ -19,8 +18,6 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool, f
         force_save (bool): If True, save without prompting.
         features_prefix (str): Prefix for feature data files. Default is "era5_de".
 
-    ToDos:
-        - Implement data processing logic for multiple feature prefixes (e.g., more than one timedelta).
     """
     logger = setup_logger("data_processing")
     
@@ -96,22 +93,24 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--feature-prefix', '-p',
-        default='era5_de',
-        help='Prefix for feature data files (default: era5_de)'
+        default='all',
+        help='Prefix for feature data files (default: all)'
     )
     
     args = parser.parse_args()
 
-    if args.feature_prefix == 'all_mlwp':
+    if args.feature_prefix == 'all':
         config = load_config(args.config)
-        prefixes = [f"{name}_td{td:02d}_de" for name in config['mlwp_names'] for td in config['mlwp_timedelta_days']]
+        prefixes = [f"{name}_de" for name in config['mlwp_names']]
+        prefixes += ['era5_de']
 
-        run_data_processing(
-        config_name=args.config,
-        model_target=args.model_target,
-        force_save=args.force_save,
-        features_prefix=prefixes
-        )   
+        for prefix in prefixes:
+            run_data_processing(
+                config_name=args.config,
+                model_target=args.model_target,
+                force_save=args.force_save,
+                features_prefix=prefix
+            )
 
     else:
         run_data_processing(
