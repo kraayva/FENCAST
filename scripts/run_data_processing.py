@@ -3,10 +3,11 @@
 import argparse
 from pathlib import Path
 import numpy as np # Import numpy for saving arrays
+import xarray as xr
 
-from fencast.utils.paths import load_config, PROCESSED_DATA_DIR
-from fencast.data_processing import load_and_prepare_data
-from fencast.utils.tools import setup_logger
+from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, RAW_DATA_DIR
+from fencast.data_processing import load_and_prepare_data, specific_humidity_to_relative_humidity
+from fencast.utils.tools import setup_logger, load_mlwp_data, load_era5_data
 
 def run_data_processing(config_name: str, model_target: str, force_save: bool, features_prefix: str = "era5_de"):
     """
@@ -73,7 +74,7 @@ def run_data_processing(config_name: str, model_target: str, force_save: bool, f
     except Exception as e:
         logger.error(f"Data processing failed: {e}")
         raise
-
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process raw data for model training.')

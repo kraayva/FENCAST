@@ -69,7 +69,7 @@ def get_latest_study_dir(results_parent_dir: Path, model_type: str = "cnn") -> P
     return sorted(model_studies, key=lambda f: f.stat().st_mtime, reverse=True)[0]
 
 
-def load_era5_data(var_name: str) -> 'xr.Dataset':
+def load_era5_data(var_name: str, level: list[int] = None) -> 'xr.Dataset':
     """Loads ERA5 reference data for a specific variable."""
     
     era5_file = RAW_DATA_DIR / f"era5_de_{var_name}.nc"
@@ -77,81 +77,56 @@ def load_era5_data(var_name: str) -> 'xr.Dataset':
     # sort latitude and longitude to ensure consistent ordering
     ds = xr.open_dataset(era5_file)
     ds = ds.sortby(['latitude', 'longitude'])
+
+    if level is not None and 'level' in ds.dims:
+        ds = ds.sel(level=level)
     if not era5_file.exists():
         raise FileNotFoundError(f"ERA5 reference file not found: {era5_file}")
 
     return ds
 
 
-#def get_mlwp_forecast_lead_time(mlwp_name: str, timedelta_str: str, var_name: str) -> float:
-    """Get the actual forecast lead time in days from consolidated MLWP file."""
-    
-    
-    # New consolidated file structure: one file per variable with all timedeltas
-    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
-    if not mlwp_file.exists():
-        raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
-    
-    # Extract timedelta index from string (e.g., "td03" -> 3)
-    td_index = int(timedelta_str.replace('td', '').lstrip('0') or '0')
-    
-    ds = xr.open_dataset(mlwp_file)
-    try:
-        # Convert to timedelta for selection
-        target_timedelta = np.timedelta64(td_index, 'D')
-        
-        # Find the specific timedelta in the array
-        prediction_timedeltas = ds['prediction_timedelta'].values
-        
-        # Check if our target timedelta exists
-        if target_timedelta in prediction_timedeltas:
-            return float(target_timedelta / np.timedelta64(1, 'D'))
-        else:
-            # Fallback: return the td_index directly (should be the same)
-            available_days = [float(td / np.timedelta64(1, 'D')) for td in prediction_timedeltas]
-            if td_index in available_days:
-                return float(td_index)
-            else:
-                raise ValueError(f"Timedelta {td_index} days not found. Available: {available_days}")
-    finally:
-        ds.close()
-
-
-def load_mlwp_data(mlwp_name: str, td_days: int, var_name: str) -> 'xr.Dataset':
+def load_mlwp_data(mlwp_name: str, td_days: int=None, var_name: str=None, level: list[int] = None) -> 'xr.Dataset':
     """Loads MLWP prediction data for a specific variable and timedelta from consolidated file."""
-    
-    mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
-    if not mlwp_file.exists():
-        raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
-    
-    # Load the full dataset
-    ds = xr.open_dataset(mlwp_file)
-    
-    target_timedelta = np.timedelta64(td_days, 'D')
+    if var_name is not None:
+        mlwp_file = RAW_DATA_DIR / f"{mlwp_name}_de_{var_name}.nc"
+        if not mlwp_file.exists():
+            raise FileNotFoundError(f"MLWP prediction file not found: {mlwp_file}")
+        
+        # Load the full dataset
+        ds = xr.open_dataset(mlwp_file)
+        
+        # sort latitude and longitude to ensure consistent ordering
+        ds = ds.sortby(['latitude', 'longitude'])
 
-    # sort latitude and longitude to ensure consistent ordering
-    ds = ds.sortby(['latitude', 'longitude'])
-    
-    try:
-        # Select the specific timedelta from the consolidated file
-        selected_ds = ds.sel(prediction_timedelta=target_timedelta)
-        
-        # Check if prediction_timedelta dimension still exists and remove it
-        # This maintains compatibility with existing code that expects no timedelta dimension
-        if 'prediction_timedelta' in selected_ds.dims:
-            selected_ds = selected_ds.squeeze('prediction_timedelta', drop=True)
-        
-        return selected_ds
-        
-    except KeyError as e:
-        ds.close()
-        available_tds = ds.prediction_timedelta.values
-        available_days = [float(td / np.timedelta64(1, 'D')) for td in available_tds]
-        raise ValueError(f"Timedelta {td_days} days not found in {mlwp_file}. "
-                        f"Available timedeltas: {available_days} days") from e
-    except Exception as e:
-        ds.close()
-        raise e
+        # select height level if specified
+        if level is not None and 'level' in ds.dims:
+            ds = ds.sel(level=level)
+        if td_days is not None:
+            target_timedelta = np.timedelta64(td_days, 'D')
+            try:
+                # Select the specific timedelta from the consolidated file
+                selected_ds = ds.sel(prediction_timedelta=target_timedelta)
+                
+                # Check if prediction_timedelta dimension still exists and remove it
+                if 'prediction_timedelta' in selected_ds.dims:
+                    selected_ds = selected_ds.squeeze('prediction_timedelta', drop=True)
+                
+                return selected_ds
+            
+            except KeyError as e:
+                ds.close()
+                available_tds = ds.prediction_timedelta.values
+                available_days = [float(td / np.timedelta64(1, 'D')) for td in available_tds]
+                raise ValueError(f"Timedelta {td_days} days not found in {mlwp_file}. "
+                                f"Available timedeltas: {available_days} days") from e
+            except Exception as e:
+                ds.close()
+                raise e
+        else:
+            return ds
+    else:
+        raise ValueError("var_name must be specified to load data.")
 
 
 def load_ground_truth_data(config: dict, years: list) -> 'pd.DataFrame':

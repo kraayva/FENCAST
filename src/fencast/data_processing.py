@@ -16,6 +16,24 @@ from fencast.utils.tools import setup_logger
 
 logger = setup_logger("data_processing")
 
+def specific_humidity_to_relative_humidity(q: float, T: float, p: float) -> float:
+    """
+    Converts specific humidity to relative humidity.
+    Args:
+        q (float): Specific humidity in kg/kg
+        T (float): Temperature in Kelvin
+        p (float): Pressure in hPa
+    """
+    T_c = T - 273.15  # convert to Celsius
+    e = (q * p) / (0.622 + 0.378 * q)  # vapor pressure
+    # saturation vapor pressure in hPa:
+    es_water = 6.112 * np.exp((17.67 * T_c) / (T_c + 243.5))
+    es_ice   = 6.112 * np.exp((22.46 * T_c) / (T_c + 272.62))
+    es = np.where(T_c >= 0, es_water, es_ice)
+
+    RH = (e / es) * 100  # relative humidity in %
+    return RH
+
 def load_and_prepare_data(
     config: dict,
     model_target: str,
