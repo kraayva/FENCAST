@@ -3,7 +3,7 @@
 # This configuration uses more flexible height levels and relative humidity instead of specific humidity.
 
 # General settings
-setup_name: 'de_uvtzq_scf_NUTS2'
+setup_name: 'de_uvtzrh_scf_NUTS2'
 
 # Data Processing Settings
 data_processing:
@@ -47,7 +47,7 @@ feature_variables:
   geopotential: [1000, 500]
   specific_humidity: [925, 700]
 
-feature_level: [350, 500, 700, 850, 1000]
+feature_level: [300, 500, 700, 850, 1000]
 
 # Dataset splitting configuration
 split_years:

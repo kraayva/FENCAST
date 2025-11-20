@@ -79,13 +79,11 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path, u
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run final model training with best hyperparameters from a study.')
-    parser.add_argument(
-        '--config', '-c', 
+    parser.add_argument('--config', '-c', 
         default='datapp_de',
         help='Configuration file name (default: datapp_de)'
     )
-    parser.add_argument(
-        '--model-type', '-m',
+    parser.add_argument('--model-type', '-m',
         choices=['ffnn', 'cnn'],
         default='cnn',
         help='The model architecture to train.'
@@ -95,7 +93,6 @@ if __name__ == '__main__':
         default='latest',
         help='Specify the study name to load params from (default: latest for the given model-type).'
     )
-
     parser.add_argument(
         '--final-run',
         action='store_true',

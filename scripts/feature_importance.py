@@ -304,7 +304,7 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run permutation feature importance analysis.')
     parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--model-type', '-m', required=True, choices=['ffnn', 'cnn'], help='The model architecture to analyze.')
+    parser.add_argument('--model-type', '-m', default='cnn', help='The model architecture to analyze.')
     parser.add_argument('--study-name', '-s', default='latest', help='The study name to use for loading results.')
     args = parser.parse_args()
     

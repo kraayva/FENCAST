@@ -63,6 +63,14 @@ def load_and_prepare_data(
     datasets = [xr.open_dataset(f).sortby(['latitude', 'longitude']) for f in feature_files]
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
+    
+    # Filter to specified pressure levels if configured
+    if 'feature_level' in config and 'level' in weather_data.dims:
+        feature_levels = config['feature_level']
+        logger.info(f"Filtering to specified pressure levels: {feature_levels}")
+        weather_data = weather_data.sel(level=feature_levels)
+        logger.info(f"Weather data filtered to {len(weather_data.level)} pressure levels")
+    
     logger.info("Weather data successfully loaded and merged.")
 
     # --- 2. Load the target data (Output Labels) ---
