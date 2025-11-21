@@ -19,19 +19,19 @@ def main():
         description="Calculate weather prediction RMSE for MLWP models",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('config', nargs='?', 
+    parser.add_argument('config', '-c', nargs='?', 
                         default='datapp_de', 
                         help='Configuration file name (default: datapp_de)')
     parser.add_argument('--output-file', '-o', 
-                       default='weather_rmse_results.csv',
+                       default='get_from_config',
                        help='Output CSV file name')
     parser.add_argument('--mlwp-model', '-m',
                        default='pangu',
                        help='MLWP model name to evaluate')
     parser.add_argument('--timedeltas', nargs='+', type=int,
                        help='Forecast lead times in indices, default: takes from config')
-    parser.add_argument('--levels', nargs='+', type=int,
-                       default=[1000, 850, 500],
+    parser.add_argument('--levels', nargs='+',
+                       default='all',
                        help='Pressure levels to evaluate')
     
     args = parser.parse_args()
@@ -43,7 +43,13 @@ def main():
     # Load configuration
     config = load_config(args.config)
     setup_name = config.get('setup_name', 'default_setup')
-    
+
+    if args.levels == 'all':
+        args.levels = config.get('feature_level')
+
+    if args.output_file == 'get_from_config':
+        args.output_file = f"weather_rmse_{config.get('setup_name')}.csv"
+
     # Set output path in results directory with MLWP model name
     results_dir = PROJECT_ROOT / "results"
     results_dir.mkdir(exist_ok=True)

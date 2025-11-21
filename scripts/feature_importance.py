@@ -42,7 +42,7 @@ def calculate_rmse(model, data_loader, device, model_type: str):
 
 def get_cnn_channel_map(config: dict) -> dict:
     """Creates a map from a CNN channel index to its (variable, level) identity."""
-    var_names = list(config['era5_var_names'].values())
+    var_names = list(config['feature_var_names'].values())
     levels = config['feature_level']
     channel_map = {}
     channel_idx = 0
@@ -77,7 +77,7 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
     if not final_model_path.exists():
         raise FileNotFoundError(f"Model file not found at {final_model_path}")
     
-    checkpoint = torch.load(final_model_path, map_location=device)
+    checkpoint = torch.load(final_model_path, map_location=device, weights_only=False)
     
     if checkpoint.get('model_type') == 'cnn' or model_type == 'cnn':
         model = DynamicCNN(**checkpoint['model_args']).to(device)
@@ -103,7 +103,7 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
         baseline_rmse = calculate_rmse(model, temp_loader, device, model_type='ffnn')
         logger.info(f"Baseline RMSE on test set: {baseline_rmse:.6f}")
         
-        var_names = list(config['era5_var_names'].values())
+        var_names = list(config['feature_var_names'].values())
         var_groups = {var: [col for col in X_processed.columns if col.startswith(f'{var}_')] for var in var_names}
         # Combine u and v into a single 'Wind' group
         var_groups['Wind'] = var_groups['u'] + var_groups['v']
@@ -157,13 +157,12 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
         logger.info(f"Baseline RMSE on test set: {baseline_rmse:.6f}")
         
         channel_map = get_cnn_channel_map(config)
-        var_groups = {var: [idx for idx, info in channel_map.items() if info['var'] == var] for var in config['era5_var_names'].values()}
+        var_groups = {var: [idx for idx, info in channel_map.items() if info['var'] == var] for var in config['feature_var_names'].values()}
         # Combine u and v into a single 'Wind' group
         var_groups['Wind'] = var_groups['u'] + var_groups['v']
         del var_groups['u']
         del var_groups['v']
-        var_groups['Temporal Features'] = ['day_of_year_sin', 'day_of_year_cos'] # Add temporal to var_groups
-
+        
         level_groups = {f"{level} hPa": [idx for idx, info in channel_map.items() if info['level'] == level] for level in config['feature_level']}
 
         feature_groups_to_test = {
@@ -174,43 +173,48 @@ def run_feature_importance(config_name: str, model_type: str, study_name: str):
         for group_type, feature_groups in feature_groups_to_test.items():
             logger.info(f"\n--- Calculating Importance {group_type} ---")
             importances = {}
-            for group_name, columns_or_indices in feature_groups.items():
-                if not columns_or_indices: continue
+            for group_name, channel_indices in feature_groups.items():
+                if not channel_indices: continue
                 
-                permuted_dataset = None
+                X_permuted = X_processed.copy()
+                n_samples = X_permuted.shape[0]
+                perm_indices = np.random.permutation(n_samples)
+                X_permuted[:, channel_indices, :, :] = X_permuted[perm_indices][:, channel_indices, :, :]
+                X_permuted_scaled = (X_permuted - mean) / std
                 
-                if group_name == 'Temporal Features':
-                    permuted_temporal = temporal_features.sample(frac=1).values
-                    permuted_dataset = torch.utils.data.TensorDataset(
-                        torch.tensor(X_scaled, dtype=torch.float32), 
-                        torch.tensor(permuted_temporal, dtype=torch.float32),
-                        torch.tensor(y_processed.values, dtype=torch.float32)
-                    )
-                else: 
-                    channel_indices = columns_or_indices
-                    X_permuted = X_processed.copy()
-                    n_samples = X_permuted.shape[0]
-                    perm_indices = np.random.permutation(n_samples)
-                    X_permuted[:, channel_indices, :, :] = X_permuted[perm_indices][:, channel_indices, :, :]
-                    X_permuted_scaled = (X_permuted - mean) / std
-                    
-                    permuted_dataset = torch.utils.data.TensorDataset(
-                        torch.tensor(X_permuted_scaled, dtype=torch.float32), 
-                        torch.tensor(temporal_features.values, dtype=torch.float32),
-                        torch.tensor(y_processed.values, dtype=torch.float32)
-                    )
+                permuted_dataset = torch.utils.data.TensorDataset(
+                    torch.tensor(X_permuted_scaled, dtype=torch.float32), 
+                    torch.tensor(temporal_features.values, dtype=torch.float32),
+                    torch.tensor(y_processed.values, dtype=torch.float32)
+                )
                 
                 permuted_loader = DataLoader(permuted_dataset, batch_size=256)
                 permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type='cnn')
                 importance = permuted_rmse - baseline_rmse
                 importances[group_name] = importance
                 logger.info(f"  Importance of '{group_name}': {importance:.6f}")
+            
+            # Add temporal features to the "By Variable" group only
+            if group_type == "By Variable":
+                logger.info("  Calculating temporal feature importance...")
+                permuted_temporal = temporal_features.sample(frac=1).values
+                permuted_dataset = torch.utils.data.TensorDataset(
+                    torch.tensor(X_scaled, dtype=torch.float32), 
+                    torch.tensor(permuted_temporal, dtype=torch.float32),
+                    torch.tensor(y_processed.values, dtype=torch.float32)
+                )
+                permuted_loader = DataLoader(permuted_dataset, batch_size=256)
+                permuted_rmse = calculate_rmse(model, permuted_loader, device, model_type='cnn')
+                temporal_importance = permuted_rmse - baseline_rmse
+                importances["Day of Year"] = temporal_importance
+                logger.info(f"  Importance of 'Day of Year': {temporal_importance:.6f}")
+            
             all_importances[group_type] = importances
     # --- SECTION 3: HEATMAP CALCULATION ---
     # =================================================================================
     logger.info("\n--- Calculating Importance for Heatmap ---")
     
-    physical_vars = {k: v for k, v in config['era5_var_names'].items() if v not in ['u', 'v']}
+    physical_vars = {k: v for k, v in config['feature_var_names'].items() if v not in ['u', 'v']}
     physical_vars['Wind'] = ['u', 'v'] # Group u and v as 'Wind'
     levels = config['feature_level']
     

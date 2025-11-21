@@ -88,7 +88,7 @@ model:
 tuning:
   # Hyperparameter will be tuned if a dict. Otherwise, fixed value is used.
   trials: 50
-  epochs: 50
+  epochs: 35
   
   activation_name: 'ELU'
   scheduler_name: 'ReduceLROnPlateau'
@@ -133,12 +133,12 @@ cnn_tuning:
   optimizer_name: 'AdamW'
   dropout_rate:
     type: float
-    min: 0.01
-    max: 0.2
+    min: 0.02
+    max: 0.3
     log_scale: true
   n_conv_layers:
     type: list
-    values: [3, 5]
+    values: [3, 5, 7, 9]
   filters:
     type: int
     min: 16
@@ -146,7 +146,7 @@ cnn_tuning:
     step: 16
   kernel_size: 
     type: list
-    values: [3, 4, 5]
+    values: [3, 4, 5, 6, 7]
 
 # Feature Engineering Settings
 features:
