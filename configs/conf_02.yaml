@@ -87,7 +87,7 @@ model:
 # Hyperparameter Tuning Settings
 tuning:
   # Hyperparameter will be tuned if a dict. Otherwise, fixed value is used.
-  trials: 50
+  trials: 200
   epochs: 35
   
   activation_name: 'ELU'
@@ -138,7 +138,7 @@ cnn_tuning:
     log_scale: true
   n_conv_layers:
     type: list
-    values: [3, 5, 7, 9]
+    values: [3, 5, 7]
   filters:
     type: int
     min: 16

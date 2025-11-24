@@ -65,7 +65,7 @@ class DynamicCNN(nn.Module):
         out_channels_list = self.params['out_channels']
         kernel_size = self.params['kernel_size']
         
-        for out_channels in out_channels_list:
+        for i, out_channels in enumerate(out_channels_list):
             cnn_layers.append(nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -75,7 +75,12 @@ class DynamicCNN(nn.Module):
             ))
             cnn_layers.append(nn.BatchNorm2d(out_channels)) # Batch normalization for stability
             cnn_layers.append(activation_fn) # Activation function for non-linearity
-            cnn_layers.append(nn.MaxPool2d(kernel_size=2, stride=2)) # Downsampling
+            
+            # Only add pooling for the first few layers to avoid over-reduction
+            # Skip pooling for later layers when spatial size becomes small
+            if i < min(3, len(out_channels_list) - 1):  # Max 3 pooling operations
+                cnn_layers.append(nn.MaxPool2d(kernel_size=2, stride=2)) # Downsampling
+            
             in_channels = out_channels
             
         self.cnn_body = nn.Sequential(*cnn_layers)

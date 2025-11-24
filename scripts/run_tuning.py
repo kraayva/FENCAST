@@ -165,10 +165,18 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
             activation_fn=getattr(nn, params['activation_name'])()
         ).to(device)
     elif model_type == 'cnn':
-        model = DynamicCNN(
-            config=config,
-            params=params
-        ).to(device)
+        try:
+            model = DynamicCNN(
+                config=config,
+                params=params
+            ).to(device)
+        except ValueError as e:
+            # Handle BatchNorm spatial dimension errors
+            if "Expected more than 1 value per channel" in str(e):
+                logger.warning(f"Trial {trial.number}: CNN architecture invalid (spatial dims too small), returning poor score")
+                return 1.0  # Return a poor score instead of crashing
+            else:
+                raise e
 
     criterion = nn.MSELoss()
     
