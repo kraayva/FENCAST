@@ -1,0 +1,168 @@
+# configs/conf_02.yaml
+
+# This configuration uses more flexible height levels and relative humidity instead of specific humidity.
+
+# General settings
+setup_name: 'de_uvtzrh_wcf_NUTS2'
+
+# Data Processing Settings
+data_processing:
+  drop_columns: ['DE50']
+
+# Target data settings
+time_start: '1980-01-01'
+time_end: '2024-12-31'
+target_data_raw: 'data/raw/wind_power_generation_onshore_cfr_NUTS2-DE.csv'
+target_size: 37
+
+# Feature data settings
+input_size_flat: 20297
+input_channels: 1 
+era5_data_raw:
+  u_component_of_wind: 'data/raw/era5_de_u_component_of_wind.nc'
+  v_component_of_wind: 'data/raw/era5_de_v_component_of_wind.nc'
+  temperature: 'data/raw/era5_de_temperature.nc'
+  geopotential: 'data/raw/era5_de_geopotential.nc'
+  relative_humidity: 'data/raw/era5_de_relative_humidity.nc'
+
+feature_var_names:
+  u_component_of_wind: 'u'
+  v_component_of_wind: 'v'
+  temperature: 't'
+  geopotential: 'z'
+  relative_humidity: 'rh'
+
+era5_dataset_url: 'gs://weatherbench2/datasets/era5/1959-2022-6h-1440x721.zarr'
+
+feature_region:
+  lat_min: 47.0
+  lat_max: 55.0
+  lon_min: 5.0
+  lon_max: 15.0
+
+feature_variables:
+  u_component_of_wind: [850, 300]
+  v_component_of_wind: [850, 300]
+  temperature: [1000, 500]
+  geopotential: [1000, 500]
+  specific_humidity: [925, 700]
+
+feature_level: [300, 500, 700, 850, 1000]
+
+# Dataset splitting configuration
+split_years:
+  # All other years will be used for training
+  validation: 
+    - 2005
+    - 2006
+    - 2010
+    - 2011
+    - 2014
+  test: 
+    - 2018
+    - 2019
+    - 2020
+    - 2021
+
+# Cross Validation Configuration
+cross_validation:
+  k_folds: 5
+  epochs: 30  # Typically fewer epochs than tuning since we're using pre-optimized hyperparameters
+  validation_metric: 'mse_loss'  # Metric to use for fold comparison
+  save_individual_models: true   # Save best model from each fold
+  year_based_splitting: true     # Use year-based splits for temporal consistency
+
+
+# Model architecture settings for final training
+model:
+  ffnn:
+    hidden_layers: [1024, 512]
+    dropout_rate: 0.3
+  cnn:
+  batch_sizes:
+    training: 64
+    evaluation: 256
+    tuning: 64
+
+# Hyperparameter Tuning Settings
+tuning:
+  # Hyperparameter will be tuned if a dict. Otherwise, fixed value is used.
+  trials: 200
+  epochs: 35
+  
+  activation_name: 'ELU'
+  scheduler_name: 'ReduceLROnPlateau'
+  scheduler_patience: 4
+  scheduler_factor: 0.2
+
+  weight_decay:
+    type: float
+    min: 1.0e-5
+    max: 1.0e-2
+    log_scale: true
+
+  early_stopping_patience: 6
+
+# FFNN-specific hyperparameter
+ffnn_tuning:
+  lr:
+    type: float
+    min: 5.0e-6
+    max: 5.0e-3
+    log_scale: true
+  dropout:
+    type: float
+    min: 0.05
+    max: 0.3
+  hidden_layers:
+    type: list
+    values: [3, 4, 5]
+  hidden_layers_units:
+    type: int
+    step: 64
+    min: 256
+    max: 2048
+
+# CNN-specific hyperparameter
+cnn_tuning:
+  lr:
+    type: float
+    min: 1.0e-5
+    max: 1.0e-3
+    log_scale: true
+  optimizer_name: 'AdamW'
+  dropout_rate:
+    type: float
+    min: 0.02
+    max: 0.3
+    log_scale: true
+  n_conv_layers:
+    type: list
+    values: [2, 3, 4]
+  filters:
+    type: int
+    min: 24
+    max: 120
+    step: 12
+  kernel_size: 
+    type: list
+    values: [3, 4, 5]
+
+# Feature Engineering Settings
+features:
+  temporal:
+    day_of_year: true
+  normalization:
+    exclude_patterns: ['day_of_year'] # Patterns to exclude from normalization
+
+# MLWP model output data:
+mlwp_names: ['pangu', 'ifs']
+
+# timedeltas for download
+mlwp_timedeltas: 
+  pangu: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39]
+  ifs: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40]
+
+# lead times indices for evaluation (make sure that these correspond to forecasting time 1d, 2d, ...)
+mlwp_timedelta_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+mlwp_timedelta_days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
