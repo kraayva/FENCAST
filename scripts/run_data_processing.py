@@ -7,6 +7,7 @@ import numpy as np
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, RAW_DATA_DIR
 from fencast.data_processing import load_and_prepare_data
 from fencast.utils.tools import setup_logger
+from fencast.utils.parser import get_parser
 
 def run_data_processing(config_name: str, force_save: bool, features_prefix: str = "era5_de"):
     """
@@ -63,22 +64,7 @@ def run_data_processing(config_name: str, force_save: bool, features_prefix: str
     
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Process raw data for model training.')
-    parser.add_argument(
-        '--config', '-c',
-        default='datapp_de',
-        help='Configuration file name (default: datapp_de)'
-    )
-    parser.add_argument(
-        '--force-save', '-f',
-        action='store_true',
-        help='Save without prompting (overwrite existing files)'
-    )
-    parser.add_argument(
-        '--feature-prefix', '-p',
-        default='era5_de',
-        help='Prefix for feature data files (default: era5_de)'
-    )
+    parser = get_parser(['config', 'force_save', 'feature_prefix'], description='Process raw data for model training.')
     
     args = parser.parse_args()
 

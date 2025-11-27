@@ -17,6 +17,7 @@ from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
+from fencast.utils.parser import get_parser
 
 
 class KFoldCrossValidator:
@@ -259,18 +260,8 @@ class KFoldCrossValidator:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run K-Fold Cross Validation for FENCAST models",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('--config', '-c', default='datapp_de',
-                       help='Configuration file name')
-    parser.add_argument('--study-name', '-s', default='latest',
-                       help='Study name to load hyperparameters from')
-    parser.add_argument('--k-folds', '-k', type=int, default=5,
-                       help='Number of folds for cross validation')
-    parser.add_argument('--results-dir', '-r', 
-                       help='Custom results directory (default: creates CV subdirectory in study dir)')
+    parser = get_parser(['config', 'study_name', 'k_folds', 'results_dir'],
+                        description="Run K-Fold Cross Validation for FENCAST models")
     
     args = parser.parse_args()
     

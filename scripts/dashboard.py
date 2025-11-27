@@ -9,6 +9,7 @@ import re
 
 from fencast.utils.tools import get_latest_study_dir
 from fencast.utils.paths import load_config, PROJECT_ROOT
+from fencast.utils.parser import get_parser
 
 #!/usr/bin/env python3
 """
@@ -33,9 +34,8 @@ def launch_optuna_dashboard(db_path: Path):
     print(f"Launched optuna-dashboard for {db_path}")
 
 def main():
-    p = argparse.ArgumentParser(description="Open optuna-dashboard for latest study from config")
-    p.add_argument("-c", "--config", required=True, type=Path, help="Path to config file")
-    args = p.parse_args()
+    parser = get_parser(['config'], description="Open optuna-dashboard for latest study from config")
+    args = parser.parse_args()
 
     config = load_config(args.config)
     setup_name = config.get("setup_name")

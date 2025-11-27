@@ -15,6 +15,7 @@ from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.parser import get_parser
 
 logger = setup_logger("feature_importance")
 
@@ -235,9 +236,7 @@ def run_feature_importance(config_name: str, study_name: str):
         logger.info(f"Saved {group_type} importance plot to {save_path}")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run permutation feature importance analysis.')
-    parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--study-name', '-s', default='latest', help='The study name to use for loading results.')
+    parser = get_parser(['config', 'study_name'], description='Run permutation feature importance analysis.')
     args = parser.parse_args()
     
     run_feature_importance(

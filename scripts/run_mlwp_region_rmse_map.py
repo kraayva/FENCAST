@@ -9,6 +9,7 @@ import json
 
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 from fencast.utils.paths import load_config
+from fencast.utils.parser import get_parser
 
 
 def create_region_scp_rmse_maps(time_deltas: list[int] = list(range(1, 10)), 
@@ -77,20 +78,8 @@ def create_region_scp_rmse_maps(time_deltas: list[int] = list(range(1, 10)),
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Create NUTS-2 region SCF RMSE plots",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--time-deltas', nargs='+', type=int, default=list(range(1, 11)),
-                        help='List of time deltas to plot (default: 1-10)')
-    
-    parser.add_argument('--study-name', default='latest',
-                        help='Study name to load results from (default: "latest")')
-    parser.add_argument('--mlwp', default=None,
-                        help='Name of the MLWP to use for labeling (default: "pangu, ifs")')
-    parser.add_argument('--model-name', default='final_model',
-                        help='Model directory name to use (default: final_model)')
+    parser = get_parser(['config', 'timedeltas', 'study_name', 'mlwp_name', 'model_name'],
+                        description="Create NUTS-2 region SCF RMSE plots")
     args = parser.parse_args()
 
     cfm = load_config(args.config)
@@ -104,10 +93,8 @@ if __name__ == "__main__":
     logger = setup_logger("region_scp_rmse_map")
     logger.info(f"Using study directory: {study_dir}")
 
-    if not args.mlwp:
-        mlwp_names = ["pangu", "ifs"]
-    else:
-        mlwp_names = [args.mlwp]
+    # Use mlwp_name from parser which is already a list
+    mlwp_names = args.mlwp_name
 
     for n in mlwp_names:
         create_region_scp_rmse_maps(time_deltas=args.time_deltas, 

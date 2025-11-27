@@ -75,7 +75,6 @@ cross_validation:
 
 # Model architecture settings for final training
 model:
-  cnn:
   batch_sizes:
     training: 64
     evaluation: 256

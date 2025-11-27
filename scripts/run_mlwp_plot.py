@@ -11,47 +11,14 @@ import argparse
 
 from fencast.utils.tools import setup_logger
 from fencast.visualization import create_mlwp_plot, create_mlwp_seasonal_plot, create_mlwp_rmse_mae_plot
+from fencast.utils.parser import get_parser
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Create MLWP evaluation plots with flexible options",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('study_name', nargs='?', default='latest', help='Study name to load results from (default: "latest")')
-    
-    # Weather data options
-    parser.add_argument('--weather-rmse-file', 
-                       help='Path to weather RMSE CSV file for comparison')
-
-    # Unified plot type selector (replaces several boolean flags)
-    parser.add_argument('--plot-type', '-p', choices=['weather', 'regions', 'seasons', 'rmse_mae'],
-                        default=None,
-                        help="Plot type: 'weather' (show weather variables), 'regions' (per-region view), 'seasons' (seasonal plot), 'rmse_mae' (RMSE vs MAE). If omitted, creates regular plot.")
-
-    # Baseline options
-    parser.add_argument('--no-persistence', action='store_true',
-                       help='Disable persistence baseline')
-    parser.add_argument('--no-climatology', action='store_true',
-                       help='Disable climatology baseline')
-    parser.add_argument('--no-weather-total', action='store_true',
-                       help='Disable total weather RMSE')
-    
-    # Model selection
-    parser.add_argument('--model-name', default='best_model',
-                       help='Model directory name to use (default: best_model, can be "final_model" or custom name)')
-    parser.add_argument('--mlwp-name', '-n', nargs='+', default=['pangu'],
-                       help='MLWP model name(s) for data loading (default: pangu). Can specify multiple: --mlwp-name pangu ifs')
-    
-    # Baseline options
-    parser.add_argument('--persistence-lead-times', nargs='+', type=int,
-                          default=list(range(1, 11)),  
-                       help='Custom lead times for persistence baseline (default: 1-10 days)')
-    
-    # Plot formatting
-    parser.add_argument('--figsize', nargs=2, type=float, default=[16, 8],
-                       help='Figure size as width height')
+    parser = get_parser(['config', 'study_name', 'weather_rmse_file', 'plot_type', 'no_persistence', 
+                         'no_climatology', 'no_weather_total', 'model_name', 'mlwp_name', 
+                         'persistence_lead_times', 'figsize'],
+                        description="Create MLWP evaluation plots with flexible options")
     
     args = parser.parse_args()
     

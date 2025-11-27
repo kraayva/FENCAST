@@ -15,6 +15,7 @@ from fencast.dataset import FencastDataset
 from fencast.models import DynamicCNN
 from fencast.utils.paths import PROJECT_ROOT, load_config
 from fencast.utils.tools import setup_logger
+from fencast.utils.parser import get_parser
 
 # Setup logger once at the start of the script
 logger = setup_logger("hyperparameter_tuning")
@@ -231,19 +232,7 @@ def objective(trial: optuna.Trial, config: dict) -> float:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Run hyperparameter tuning for a given model architecture.")
-    parser.add_argument(
-        '--config', '-c',
-        type=str,
-        default='datapp_de',
-        help='Configuration file name (e.g., datapp_de) without the .yaml extension.'
-    )
-    parser.add_argument(
-        '--study-name', '-s',
-        type=str,
-        default=None,
-        help='Optional study name for the Optuna study.'
-    )
+    parser = get_parser(['config', 'study_name'], description="Run hyperparameter tuning for a given model architecture.")
     args = parser.parse_args()
 
     config = load_config(args.config)

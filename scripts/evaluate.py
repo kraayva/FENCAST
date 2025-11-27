@@ -16,6 +16,7 @@ from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
 from fencast.models import DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.parser import get_parser
 
 logger = setup_logger("evaluation")
 
@@ -178,8 +179,12 @@ def evaluate(config_name: str, study_name: str):
     create_plots(labels_df, preds_df, climatology_preds_df, study_dir)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Evaluate a trained model on the test set.')
-    parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--study-name', '-s', default='latest', help='Study directory to use for saving plots (default: latest for the given model-type).')
+    parser_names = ['config', 'study_name']
+    parser = get_parser(parser_names, description="Evaluate a trained model on the test set.")
     args = parser.parse_args()
+
+    if args.config == 'default':
+        config = load_config()
+        args.config = config.get('default_config')
+    
     evaluate(config_name=args.config, study_name=args.study_name)

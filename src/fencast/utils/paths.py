@@ -14,7 +14,7 @@ PROCESSED_DATA_DIR = DATA_DIR / "processed"
 LOG_DIR = PROJECT_ROOT / "logs"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
-def load_config(config_name: str) -> dict:
+def load_config(config_name: str = "global") -> dict:
     """
     Loads a YAML configuration file from the 'configs' directory.
 

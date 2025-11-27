@@ -14,4 +14,7 @@ gsWB2_neuralgcm_data: gs://weatherbench2/datasets/neuralgcm_deterministic/2020-5
 gsWB2_ifs_data: gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr
 
 ## DEFAULTS
-default_config: datapp_de
+defaults: 
+  config: 'wind01'
+  study_name: 'latest'
+  

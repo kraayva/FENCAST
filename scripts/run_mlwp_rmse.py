@@ -12,27 +12,12 @@ from pathlib import Path
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.utils.tools import setup_logger
 from fencast.mlwp_analysis import calculate_mlwp_weather_rmse
+from fencast.utils.parser import get_parser
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Calculate weather prediction RMSE for MLWP models",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('config', '-c', nargs='?', 
-                        default='datapp_de', 
-                        help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--output-file', '-o', 
-                       default='get_from_config',
-                       help='Output CSV file name')
-    parser.add_argument('--mlwp-model', '-m',
-                       default='pangu',
-                       help='MLWP model name to evaluate')
-    parser.add_argument('--timedeltas', nargs='+', type=int,
-                       help='Forecast lead times in indices, default: takes from config')
-    parser.add_argument('--levels', nargs='+',
-                       default='all',
-                       help='Pressure levels to evaluate')
+    parser = get_parser(['config', 'output_file', 'mlwp_model', 'mlwp_timedeltas', 'levels'],
+                        description="Calculate weather prediction RMSE for MLWP models")
     
     args = parser.parse_args()
     

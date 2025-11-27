@@ -8,6 +8,7 @@ import xarray as xr
 from fencast.utils.paths import RAW_DATA_DIR
 from fencast.data_processing import specific_humidity_to_relative_humidity
 from fencast.utils.tools import setup_logger
+from fencast.utils.parser import get_parser
 
 def create_specific_humidity_files(file_prefix: str = "era5_de"):
     """
@@ -81,9 +82,7 @@ def create_specific_humidity_files(file_prefix: str = "era5_de"):
     
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run specific humidity to relative humidity conversion.')
-
-    parser.add_argument('--file_prefix', type=str, default='all', help='Prefix for feature data files.')
+    parser = get_parser(['file_prefix'], description='Run specific humidity to relative humidity conversion.')
     args = parser.parse_args()
 
     if args.file_prefix == "all":

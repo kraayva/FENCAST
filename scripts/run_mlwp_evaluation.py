@@ -21,6 +21,7 @@ import torch.nn as nn
 from fencast.utils.paths import load_config, PROJECT_ROOT, PROCESSED_DATA_DIR
 from fencast.utils.tools import setup_logger, get_latest_study_dir, load_ground_truth_data, load_mlwp_data
 from fencast.utils.experiment_management import load_trained_model
+from fencast.utils.parser import get_parser
 
 
 def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: int) -> xr.Dataset:
@@ -42,6 +43,12 @@ def load_mlwp_forecast_data(config: dict, mlwp_name: str, timedelta: int) -> xr.
     # Merge all variables and rename according to config
     weather_data = xr.merge(datasets, compat='override', join='inner')
     weather_data = weather_data.rename(config['feature_var_names'])
+
+    # Filter to specified pressure levels if configured (to match training data)
+    if 'feature_level' in config and 'level' in weather_data.dims:
+        feature_levels = config['feature_level']
+        logger.info(f"Filtering MLWP data to specified pressure levels: {feature_levels}")
+        weather_data = weather_data.sel(level=feature_levels)
 
     # shift time coordinates by forecast lead time
     time_delta_hours = np.timedelta64(timedelta * 24, 'h')
@@ -198,20 +205,8 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Evaluate trained CNN models on MLWP weather forecasts",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('config', nargs='?', default='datapp_de', 
-                       help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--study-name', '-s', default='latest', 
-                       help='Study name to load the model from (default: latest)')
-    parser.add_argument('--mlwp-models', nargs='+',
-                       help='Specific MLWP models to evaluate (default: all from config)')
-    parser.add_argument('--timedeltas', nargs='+', type=int,
-                       help='Specific forecast lead times to evaluate (default: all from config)')
-    parser.add_argument('--final-model', action='store_true',
-                       help='Flag indicating to use the final model trained on all data')
+    parser = get_parser(['config', 'study_name', 'mlwp_models', 'mlwp_timedeltas', 'final_model'],
+                        description="Evaluate trained CNN models on MLWP weather forecasts")
     
     args = parser.parse_args()
     

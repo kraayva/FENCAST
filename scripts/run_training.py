@@ -7,9 +7,10 @@ from pathlib import Path
 
 # Import our custom modules
 from fencast.utils.paths import load_config, PROJECT_ROOT
-from fencast.utils.tools import setup_logger, get_latest_study_dir
+from fencast.utils.tools import setup_logger
 from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
+from fencast.utils.parser import get_parser
 
 def run_training(config: dict, params: dict, study_dir: Path, use_all_data: bool = False) -> dict:
     """
@@ -77,21 +78,7 @@ def run_training(config: dict, params: dict, study_dir: Path, use_all_data: bool
     return results
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run final model training with best hyperparameters from a study.')
-    parser.add_argument('--config', '-c', 
-        default='datapp_de',
-        help='Configuration file name (default: datapp_de)'
-    )
-    parser.add_argument(
-        '--study-name', '-s',
-        default='latest',
-        help='Specify the study name to load params from (default: latest for the given model-type).'
-    )
-    parser.add_argument(
-        '--final-run',
-        action='store_true',
-        help='Flag to train on all data (train + validation) to produce a final model.'
-    )
+    parser = get_parser(['config', 'study_name', 'final_run'], description='Run final model training with best hyperparameters from a study.')
     
     args = parser.parse_args()
     config = load_config(args.config)
@@ -108,6 +95,22 @@ if __name__ == '__main__':
         results_parent_dir=results_parent_dir,
         study_name=args.study_name
     )
+
+    # Merge fixed parameters from config that are not in the study params
+    # This is necessary because Optuna only stores tuned parameters
+    tuning_config = config.get('tuning', {})
+    model_tuning_config = config.get('cnn_tuning', {})
+    combined_config = {**tuning_config, **model_tuning_config}
+
+    for param_name, param_config in combined_config.items():
+        # Skip non-hyperparameter keys
+        if param_name in ['trials', 'epochs', 'early_stopping_patience']:
+            continue
+            
+        # If it's a fixed parameter (int, float, str) and not already in params
+        if isinstance(param_config, (int, float, str)) and param_name not in params:
+            params[param_name] = param_config
+            logger.info(f"Added fixed parameter from config: {param_name}={param_config}")
 
     # Validate and clean parameters
     final_params = validate_training_parameters(params)

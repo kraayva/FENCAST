@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from fencast.utils.paths import load_config, PROCESSED_DATA_DIR, PROJECT_ROOT
 from fencast.utils.tools import setup_logger, calculate_persistence_baseline
+from fencast.utils.parser import get_parser
 
 
 # calculate_persistence_baseline is now imported from fencast.utils.tools
@@ -362,21 +363,8 @@ def run_persistence_analysis_with_plot(config_name: str = 'datapp_de',
 
 def main():
     """Main function for command line usage."""
-    parser = argparse.ArgumentParser(
-        description="Calculate persistence baseline for solar capacity factor forecasting",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument('--config', '-c', default='datapp_de',
-                       help='Configuration file name')
-    parser.add_argument('--lead-times', '-lt', nargs='+', type=int,
-                       default=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-                       help='Lead times in days')
-    parser.add_argument('--no-save', action='store_true',
-                       help='Do not save results to file')
-    parser.add_argument('--plot', action='store_true',
-                       help='Create and show visualization plot')
-    parser.add_argument('--no-display', action='store_true',
-                       help='Do not display plot (only save)')
+    parser = get_parser(['config', 'lead_times', 'no_save', 'plot', 'no_display'],
+                        description="Calculate persistence baseline for solar capacity factor forecasting")
     
     args = parser.parse_args()
     
