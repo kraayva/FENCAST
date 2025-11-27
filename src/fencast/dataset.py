@@ -15,54 +15,41 @@ class FencastDataset(Dataset):
     PyTorch Dataset for the FENCAST project.
 
     This class loads processed data, splits it into train/validation/test sets,
-    and handles normalization appropriate for the specified model type.
-    For CNNs, it provides two separate inputs: spatial and temporal features.
+    and handles normalization appropriate for the CNN model.
+    It provides two separate inputs: spatial and temporal features.
     """
-    def __init__(self, config: dict, mode: str, model_type: str, apply_normalization: bool = True, 
+    def __init__(self, config: dict, mode: str, apply_normalization: bool = True, 
                  custom_years: list = None):
         super().__init__()
         if mode not in ['train', 'validation', 'test']:
             raise ValueError("Mode must be 'train', 'validation', or 'test'")
-        if model_type not in ['ffnn', 'cnn']:
-            raise ValueError("model_type must be 'ffnn' or 'cnn'")
         
         self.config = config
         self.mode = mode
-        self.model_type = model_type
         self.setup_name = self.config['setup_name']
         self.custom_years = custom_years  # For cross validation custom year filtering
         
         self._load_data()
         self._split_data()
 
-        # For CNNs, create temporal features after splitting
-        if self.model_type == 'cnn':
-            self._create_temporal_features()
+        # Create temporal features after splitting
+        self._create_temporal_features()
 
         if apply_normalization:
             self._normalize_features()
 
     def _load_data(self):
-        """Loads features and labels based on the model_type."""
-        print(f"[{self.mode}] Loading data for '{self.model_type}' model...")
+        """Loads features and labels for the CNN model."""
+        print(f"[{self.mode}] Loading data for CNN model...")
         
-        if self.model_type == 'ffnn':
-            features_path = PROCESSED_DATA_DIR / f"{self.setup_name}_features_ffnn.parquet"
-            labels_path = PROCESSED_DATA_DIR / f"{self.setup_name}_labels_ffnn.parquet"
-            if not features_path.exists() or not labels_path.exists():
-                raise FileNotFoundError(f"FFNN data not found for setup '{self.setup_name}'. Run data processing with --model-target ffnn.")
-            self.X = pd.read_parquet(features_path)
-            self.y = pd.read_parquet(labels_path)
+        features_path = PROCESSED_DATA_DIR / f"{self.setup_name}_features_cnn.npz"
+        labels_path = PROCESSED_DATA_DIR / f"{self.setup_name}_labels_cnn.parquet"
+        if not features_path.exists() or not labels_path.exists():
+            raise FileNotFoundError(f"CNN data not found for setup '{self.setup_name}'. Run data processing.")
         
-        elif self.model_type == 'cnn':
-            features_path = PROCESSED_DATA_DIR / f"{self.setup_name}_features_cnn.npz"
-            labels_path = PROCESSED_DATA_DIR / f"{self.setup_name}_labels_cnn.parquet"
-            if not features_path.exists() or not labels_path.exists():
-                raise FileNotFoundError(f"CNN data not found for setup '{self.setup_name}'. Run data processing with --model-target cnn.")
-            
-            with np.load(features_path) as data:
-                self.X = data['features']
-            self.y = pd.read_parquet(labels_path)
+        with np.load(features_path) as data:
+            self.X = data['features']
+        self.y = pd.read_parquet(labels_path)
 
     def _split_data(self):
         """
@@ -107,33 +94,6 @@ class FencastDataset(Dataset):
         }, index=self.y.index)
 
     def _normalize_features(self):
-        """Applies normalization based on the model type."""
-        if self.model_type == 'ffnn':
-            self._normalize_ffnn()
-        elif self.model_type == 'cnn':
-            self._normalize_cnn()
-
-    def _normalize_ffnn(self):
-        """Fits/loads a StandardScaler for 2D tabular data."""
-        scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_ffnn_scaler.gz"
-        exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', [])
-        
-        keep_values_columns = [col for col in self.X.columns for pattern in exclude_patterns if pattern in col]
-        normalize_columns = [col for col in self.X.columns if col not in keep_values_columns]
-        
-        if self.mode == 'train':
-            print(f"[{self.mode}] Fitting new FFNN scaler...")
-            scaler = StandardScaler()
-            self.X[normalize_columns] = scaler.fit_transform(self.X[normalize_columns])
-            joblib.dump(scaler, scaler_path)
-        else:
-            if not scaler_path.exists():
-                raise FileNotFoundError(f"Scaler not found at {scaler_path}. Run training first.")
-            print(f"[{self.mode}] Loading existing FFNN scaler from {scaler_path}...")
-            scaler = joblib.load(scaler_path)
-            self.X[normalize_columns] = scaler.transform(self.X[normalize_columns])
-
-    def _normalize_cnn(self):
         """Calculates/loads per-channel mean/std for 4D image-like data."""
         scaler_path = PROCESSED_DATA_DIR / f"{self.setup_name}_cnn_scaler.npz"
         
@@ -160,22 +120,13 @@ class FencastDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple:
         """
         Retrieves the feature and label tensors for a given index.
-        Returns a tuple of 2 tensors for FFNN and 3 for CNN.
+        Returns a tuple of 3 tensors: spatial, temporal, label.
         """
-        if self.model_type == 'ffnn':
-            features = self.X.iloc[idx].values
-            labels = self.y.iloc[idx].values
-            
-            feature_tensor = torch.tensor(features, dtype=torch.float32)
-            label_tensor = torch.tensor(labels, dtype=torch.float32)
-            return feature_tensor, label_tensor
-            
-        elif self.model_type == 'cnn':
-            spatial_features = self.X[idx]
-            temporal_features = self.temporal_features.iloc[idx].values
-            labels = self.y.iloc[idx].values
-            
-            spatial_tensor = torch.tensor(spatial_features, dtype=torch.float32)
-            temporal_tensor = torch.tensor(temporal_features, dtype=torch.float32)
-            label_tensor = torch.tensor(labels, dtype=torch.float32)
-            return spatial_tensor, temporal_tensor, label_tensor
+        spatial_features = self.X[idx]
+        temporal_features = self.temporal_features.iloc[idx].values
+        labels = self.y.iloc[idx].values
+        
+        spatial_tensor = torch.tensor(spatial_features, dtype=torch.float32)
+        temporal_tensor = torch.tensor(temporal_features, dtype=torch.float32)
+        label_tensor = torch.tensor(labels, dtype=torch.float32)
+        return spatial_tensor, temporal_tensor, label_tensor

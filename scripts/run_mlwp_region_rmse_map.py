@@ -14,10 +14,10 @@ from fencast.utils.paths import load_config
 def create_region_scp_rmse_maps(time_deltas: list[int] = list(range(1, 10)), 
                                 config: dict = None, logger=None, 
                                 study_dir: Path = None, 
-                                model_type: str = "final_model", 
+                                model_name: str = "final_model", 
                                 mlwp_name: str = "pangu"):
 
-    output_dir = study_dir / model_type / "region_scp_rmse_maps"
+    output_dir = study_dir / model_name / "region_scp_rmse_maps"
     os.makedirs(output_dir, exist_ok=True)
 
     if not config:
@@ -29,7 +29,7 @@ def create_region_scp_rmse_maps(time_deltas: list[int] = list(range(1, 10)),
 
     for i in time_deltas:
         i_str = str(i).zfill(2)
-        p = Path(f"{study_dir}/{model_type}/mlwp_evaluation/{mlwp_name}/metrics_td{i_str}.json")
+        p = Path(f"{study_dir}/{model_name}/mlwp_evaluation/{mlwp_name}/metrics_td{i_str}.json")
         with p.open("r", encoding="utf-8") as f:
             metrics_td = json.load(f)
         metrics[f"td{i_str}"] = metrics_td
@@ -89,6 +89,8 @@ if __name__ == "__main__":
                         help='Study name to load results from (default: "latest")')
     parser.add_argument('--mlwp', default=None,
                         help='Name of the MLWP to use for labeling (default: "pangu, ifs")')
+    parser.add_argument('--model-name', default='final_model',
+                        help='Model directory name to use (default: final_model)')
     args = parser.parse_args()
 
     cfm = load_config(args.config)
@@ -104,10 +106,13 @@ if __name__ == "__main__":
 
     if not args.mlwp:
         mlwp_names = ["pangu", "ifs"]
+    else:
+        mlwp_names = [args.mlwp]
 
     for n in mlwp_names:
         create_region_scp_rmse_maps(time_deltas=args.time_deltas, 
                                     config=cfm, 
                                     logger=logger, 
                                     study_dir=study_dir, 
+                                    model_name=args.model_name,
                                     mlwp_name=n)

@@ -8,18 +8,17 @@ from typing import Dict, Any
 
 from fencast.utils.paths import PROJECT_ROOT
 from fencast.utils.tools import get_latest_study_dir, setup_logger
-from fencast.models import DynamicCNN, DynamicFFNN
+from fencast.models import DynamicCNN
 
 logger = setup_logger("experiment_management")
 
 
-def load_best_params_from_study(results_parent_dir: Path, model_type: str, study_name: str = 'latest') -> Dict[str, Any]:
+def load_best_params_from_study(results_parent_dir: Path, study_name: str = 'latest') -> Dict[str, Any]:
     """
     Loads the best hyperparameters from a specified Optuna study.
 
     Args:
         results_parent_dir (Path): The parent directory containing all study results.
-        model_type (str): The model architecture ('ffnn' or 'cnn').
         study_name (str): The name of the study to load from. 'latest' will find the most recent one.
 
     Returns:
@@ -27,7 +26,7 @@ def load_best_params_from_study(results_parent_dir: Path, model_type: str, study
     """
     try:
         if study_name == 'latest':
-            study_dir = get_latest_study_dir(results_parent_dir, model_type)
+            study_dir = get_latest_study_dir(results_parent_dir)
         else:
             study_dir = results_parent_dir / study_name
 
@@ -44,7 +43,7 @@ def load_best_params_from_study(results_parent_dir: Path, model_type: str, study
         return params, study_dir
 
     except Exception as e:
-        logger.error(f"Failed to load study '{study_name}' for model '{model_type}': {e}")
+        logger.error(f"Failed to load study '{study_name}': {e}")
         raise
 
 
@@ -68,7 +67,7 @@ def load_trained_model(study_dir: Path, use_final_model: bool = False, device: s
         raise FileNotFoundError(f"Model file not found at {model_path}")
 
     checkpoint = torch.load(model_path, map_location=torch.device(device), weights_only=False)
-    model_class = DynamicCNN #if checkpoint['model_args']['model_type'] == 'cnn' else DynamicFFNN
+    model_class = DynamicCNN
     model = model_class(**checkpoint['model_args'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()

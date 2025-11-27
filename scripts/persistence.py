@@ -105,9 +105,6 @@ def run_persistence_analysis(config_name: str = 'datapp_de',
     
     # Load processed data
     labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
-    if not labels_file.exists():
-        # Try FFNN labels if CNN labels don't exist
-        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
         
     if not labels_file.exists():
         raise FileNotFoundError(f"No processed labels found for setup {setup_name}")

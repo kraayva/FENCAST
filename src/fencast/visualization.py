@@ -35,7 +35,7 @@ def _load_metrics_files(study_dir: Path, model_name: str) -> List[Path]:
     return metric_files
 
 
-def _setup_study_directory(config_name: str, model_type: str, study_name: str) -> tuple:
+def _setup_study_directory(config_name: str, study_name: str) -> tuple:
     """Common setup logic for study directory and config loading."""
     config = load_config(config_name)
     setup_name = config.get('setup_name', 'default_setup')
@@ -43,7 +43,7 @@ def _setup_study_directory(config_name: str, model_type: str, study_name: str) -
     # Find study directory
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
-        study_dir = get_latest_study_dir(results_parent_dir, model_type) if study_name == 'latest' else results_parent_dir / study_name
+        study_dir = get_latest_study_dir(results_parent_dir) if study_name == 'latest' else results_parent_dir / study_name
         logger.info(f"Loading results from: {study_dir}")
         return config, study_dir
     except FileNotFoundError as e:
@@ -195,8 +195,6 @@ class MLWPPlotter:
 
         setup_name = self.config.get('setup_name', 'default_setup')
         labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
-        if not labels_file.exists():
-            labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
 
         if not labels_file.exists():
             logger.warning("Processed labels not found for normalization; will skip normalization")
@@ -626,8 +624,6 @@ def load_energy_prediction_data_seasonal(study_dir: Path, config: dict, model_na
     labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
     if not labels_file.exists():
         labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
-        
-    if not labels_file.exists():
         # Fallback to raw data
         gt_file = PROJECT_ROOT / config['target_data_raw']
         gt_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
@@ -711,8 +707,6 @@ def calculate_seasonal_persistence_baseline(config: dict, persistence_lead_times
     labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
     if not labels_file.exists():
         labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
-        
-    if not labels_file.exists():
         # Fallback to raw data
         gt_file = PROJECT_ROOT / config['target_data_raw']
         full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
@@ -836,7 +830,6 @@ class MLWPSeasonalPlotter:
 
 
 def create_mlwp_seasonal_plot(config_name: str, 
-                             model_type: str, 
                              study_name: str, 
                              persistence_lead_times: Optional[List[int]] = None,
                              figsize: tuple = (16, 8),
@@ -846,7 +839,7 @@ def create_mlwp_seasonal_plot(config_name: str,
     logger.info(f"--- Creating MLWP Seasonal Plot for study '{study_name}' ---")
     
     try:
-        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+        config, study_dir = _setup_study_directory(config_name, study_name)
     except FileNotFoundError:
         return
 
@@ -958,7 +951,6 @@ class MLWPRmseMaePlotter:
 
 
 def create_mlwp_rmse_mae_plot(config_name: str, 
-                             model_type: str, 
                              study_name: str, 
                              figsize: tuple = (16, 8),
                              mlwp_names: list = None,
@@ -967,7 +959,7 @@ def create_mlwp_rmse_mae_plot(config_name: str,
     logger.info(f"--- Creating MLWP RMSE vs MAE Plot for study '{study_name}' ---")
     
     try:
-        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+        config, study_dir = _setup_study_directory(config_name, study_name)
     except FileNotFoundError:
         return
 
@@ -979,7 +971,6 @@ def create_mlwp_rmse_mae_plot(config_name: str,
 
 
 def create_mlwp_plot(config_name: str, 
-                     model_type: str, 
                      study_name: str, 
                      weather_rmse_file: Optional[str] = None,
                      show_persistence: bool = True,
@@ -996,7 +987,6 @@ def create_mlwp_plot(config_name: str,
     
     Args:
         config_name: Configuration file name
-        model_type: Model architecture type
         study_name: Study name to load results from
         weather_rmse_file: Optional path to weather RMSE CSV file
         show_persistence: Whether to show persistence baseline
@@ -1009,7 +999,7 @@ def create_mlwp_plot(config_name: str,
     logger.info(f"--- Creating MLWP Evaluation Plot for study '{study_name}' ---")
     
     try:
-        config, study_dir = _setup_study_directory(config_name, model_type, study_name)
+        config, study_dir = _setup_study_directory(config_name, study_name)
     except FileNotFoundError:
         return
 

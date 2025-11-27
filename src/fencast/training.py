@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 
 from fencast.dataset import FencastDataset
-from fencast.models import DynamicFFNN, DynamicCNN
+from fencast.models import DynamicCNN
 
 
 class ModelTrainer:
@@ -17,18 +17,16 @@ class ModelTrainer:
     A flexible model trainer that can be used for regular training, cross-validation, and hyperparameter tuning.
     """
     
-    def __init__(self, config: Dict[str, Any], model_type: str, params: Dict[str, Any], logger=None):
+    def __init__(self, config: Dict[str, Any], params: Dict[str, Any], logger=None):
         """
         Initialize the trainer.
         
         Args:
             config: Project configuration dictionary
-            model_type: Model architecture ('ffnn' or 'cnn')
             params: Training hyperparameters
             logger: Logger instance (optional)
         """
         self.config = config
-        self.model_type = model_type
         self.params = params
         self.logger = logger
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,25 +56,11 @@ class ModelTrainer:
         Returns:
             Tuple of (model, model_args)
         """
-        activation_fn = getattr(nn, self.params['activation_name'])()
-        
-        if self.model_type == 'ffnn':
-            model_args = {
-                'input_size': self.config['input_size_flat'],
-                'output_size': self.config['target_size'],
-                'hidden_layers': self.params['hidden_layers'],
-                'dropout_rate': self.params['dropout_rate'],
-                'activation_fn': activation_fn
-            }
-            model = DynamicFFNN(**model_args).to(self.device)
-        elif self.model_type == 'cnn':
-            model_args = {
-                'config': self.config,
-                'params': self.params
-            }
-            model = DynamicCNN(**model_args).to(self.device)
-        else:
-            raise ValueError(f"Unknown model type: {self.model_type}")
+        model_args = {
+            'config': self.config,
+            'params': self.params
+        }
+        model = DynamicCNN(**model_args).to(self.device)
             
         return model, model_args
     
@@ -143,8 +127,8 @@ class ModelTrainer:
         if batch_size is None:
             batch_size = self.config.get('model', {}).get('batch_sizes', {}).get('training', 64)
             
-        train_dataset = FencastDataset(config=self.config, mode=train_mode, model_type=self.model_type)
-        val_dataset = FencastDataset(config=self.config, mode=val_mode, model_type=self.model_type)
+        train_dataset = FencastDataset(config=self.config, mode=train_mode)
+        val_dataset = FencastDataset(config=self.config, mode=val_mode)
         
         train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
@@ -168,48 +152,28 @@ class ModelTrainer:
             batch_size = self.params.get('batch_size', 64) # Use params for batch size
             
         # 1. Create the training dataset and loader
-        train_dataset = FencastDataset(config=self.config, mode='train', model_type=self.model_type, 
+        train_dataset = FencastDataset(config=self.config, mode='train', 
                                     apply_normalization=False, custom_years=train_years)
         
         val_loader = None
         
         # 2. Conditionally create the validation dataset and loader
         if val_years: # This is True only if the list is not empty
-            val_dataset = FencastDataset(config=self.config, mode='validation', model_type=self.model_type, 
+            val_dataset = FencastDataset(config=self.config, mode='validation', 
                                         apply_normalization=False, custom_years=val_years)
             
             # Apply normalization to both
-            if self.model_type == 'ffnn':
-                self._normalize_ffnn_datasets(train_dataset, val_dataset)
-            elif self.model_type == 'cnn':
-                self._normalize_cnn_datasets(train_dataset, val_dataset)
+            self._normalize_cnn_datasets(train_dataset, val_dataset)
                 
             val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
         else:
             # If no validation set, just normalize the training set
-            if self.model_type == 'ffnn':
-                self._normalize_ffnn_datasets(train_dataset) # Pass only one argument
-            elif self.model_type == 'cnn':
-                self._normalize_cnn_datasets(train_dataset) # Pass only one argument
+            self._normalize_cnn_datasets(train_dataset) # Pass only one argument
 
         # 3. Create the training loader after normalization has been applied
         train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
         
         return train_loader, val_loader
-    
-    def _normalize_ffnn_datasets(self, train_dataset, val_dataset = None):
-        """Normalize FFNN datasets using training data statistics."""
-        from sklearn.preprocessing import StandardScaler
-        
-        exclude_patterns = self.config.get('features', {}).get('normalization', {}).get('exclude_patterns', [])
-        keep_values_columns = [col for col in train_dataset.X.columns for pattern in exclude_patterns if pattern in col]
-        normalize_columns = [col for col in train_dataset.X.columns if col not in keep_values_columns]
-        
-        # Fit scaler on training data
-        scaler = StandardScaler()
-        train_dataset.X[normalize_columns] = scaler.fit_transform(train_dataset.X[normalize_columns])
-        if val_dataset:
-            val_dataset.X[normalize_columns] = scaler.transform(val_dataset.X[normalize_columns])
     
     def _normalize_cnn_datasets(self, train_dataset, val_dataset = None):
         """Normalize CNN datasets using training data statistics."""
@@ -235,15 +199,10 @@ class ModelTrainer:
         Returns:
             Model outputs
         """
-        if self.model_type == 'cnn':
-            spatial_features, temporal_features, labels = batch
-            spatial_features = spatial_features.to(self.device)
-            temporal_features = temporal_features.to(self.device)
-            outputs = model(spatial_features, temporal_features)
-        else:  # FFNN
-            features, labels = batch
-            features = features.to(self.device)
-            outputs = model(features)
+        spatial_features, temporal_features, labels = batch
+        spatial_features = spatial_features.to(self.device)
+        temporal_features = temporal_features.to(self.device)
+        outputs = model(spatial_features, temporal_features)
             
         return outputs
     
@@ -266,10 +225,7 @@ class ModelTrainer:
         
         for batch in train_loader:
             # Get labels for loss calculation
-            if self.model_type == 'cnn':
-                labels = batch[2].to(self.device)  # spatial, temporal, labels
-            else:
-                labels = batch[1].to(self.device)  # features, labels
+            labels = batch[2].to(self.device)  # spatial, temporal, labels
             
             # Forward pass
             outputs = self.forward_pass(model, batch)
@@ -306,10 +262,7 @@ class ModelTrainer:
         with torch.no_grad():
             for batch in val_loader:
                 # Get labels for loss calculation
-                if self.model_type == 'cnn':
-                    labels = batch[2].to(self.device)  # spatial, temporal, labels
-                else:
-                    labels = batch[1].to(self.device)  # features, labels
+                labels = batch[2].to(self.device)  # spatial, temporal, labels
                 
                 # Forward pass
                 outputs = self.forward_pass(model, batch)
@@ -367,7 +320,6 @@ class ModelTrainer:
                     if save_path:
                         # Your existing dictionary for saving the model checkpoint
                         checkpoint = {
-                            'model_type': self.model_type,
                             'model_args': model_args,
                             'model_state_dict': model.state_dict(),
                             'optimizer_state_dict': optimizer.state_dict(),
@@ -399,7 +351,6 @@ class ModelTrainer:
             
             # Your existing dictionary for saving the model checkpoint
             final_checkpoint = {
-                'model_type': self.model_type,
                 'model_args': model_args,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),

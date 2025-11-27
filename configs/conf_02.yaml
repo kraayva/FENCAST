@@ -12,7 +12,7 @@ data_processing:
 # Target data settings
 time_start: '1980-01-01'
 time_end: '2024-12-31'
-target_data_raw: 'data/raw/cfr_NUTS2-DE.csv'
+target_data_raw: 'data/raw/solar_cfr_NUTS2-DE.csv'
 target_size: 37
 
 # Feature data settings
@@ -47,7 +47,7 @@ feature_variables:
   geopotential: [1000, 500]
   specific_humidity: [925, 700]
 
-feature_level: [300, 500, 700, 850, 1000]
+feature_level: [500, 700, 850, 950, 1000]
 
 # Dataset splitting configuration
 split_years:
@@ -75,10 +75,6 @@ cross_validation:
 
 # Model architecture settings for final training
 model:
-  ffnn:
-    hidden_layers: [1024, 512]
-    dropout_rate: 0.3
-  cnn:
   batch_sizes:
     training: 64
     evaluation: 256
@@ -102,26 +98,6 @@ tuning:
     log_scale: true
 
   early_stopping_patience: 6
-
-# FFNN-specific hyperparameter
-ffnn_tuning:
-  lr:
-    type: float
-    min: 5.0e-6
-    max: 5.0e-3
-    log_scale: true
-  dropout:
-    type: float
-    min: 0.05
-    max: 0.3
-  hidden_layers:
-    type: list
-    values: [3, 4, 5]
-  hidden_layers_units:
-    type: int
-    step: 64
-    min: 256
-    max: 2048
 
 # CNN-specific hyperparameter
 cnn_tuning:

@@ -5,35 +5,6 @@ import torch.nn as nn
 import numpy as np
 from typing import List, Dict
 
-class DynamicFFNN(nn.Module):
-    """
-    A dynamically generated Feed-Forward Neural Network.
-    
-    The number and size of hidden layers are determined by the `hidden_layers` list.
-    """
-    def __init__(self, input_size: int, output_size: int, hidden_layers: List[int], dropout_rate: float, activation_fn: nn.Module):
-        super().__init__()
-        
-        layers = []
-        current_input_size = input_size
-        
-        # Create hidden layers dynamically
-        for layer_size in hidden_layers:
-            layers.append(nn.Linear(current_input_size, layer_size))
-            layers.append(activation_fn)
-            layers.append(nn.Dropout(dropout_rate))
-            current_input_size = layer_size
-            
-        # Add the final output layer
-        layers.append(nn.Linear(current_input_size, output_size))
-        
-        self.network = nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Standard forward pass."""
-        return self.network(x)
-
-
 class DynamicCNN(nn.Module):
     """
     A dynamically generated Convolutional Neural Network with a two-stream input.

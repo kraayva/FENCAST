@@ -14,25 +14,20 @@ from pathlib import Path
 
 from fencast.utils.paths import load_config, PROJECT_ROOT
 from fencast.dataset import FencastDataset
-from fencast.models import DynamicFFNN, DynamicCNN
+from fencast.models import DynamicCNN
 from fencast.utils.tools import setup_logger, get_latest_study_dir
 
 logger = setup_logger("evaluation")
 
-def get_predictions(model, data_loader, device, model_type: str):
+def get_predictions(model, data_loader, device):
     """Runs the model on the test set and returns predictions and labels."""
     model.eval()
     all_predictions, all_labels = [], []
     with torch.no_grad():
         for batch in data_loader:
-            if model_type == 'cnn':
-                spatial_features, temporal_features, labels = batch
-                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
-                outputs = model(spatial_features, temporal_features)
-            elif model_type == 'ffnn':
-                features, labels = batch
-                features, labels = features.to(device), labels.to(device)
-                outputs = model(features)
+            spatial_features, temporal_features, labels = batch
+            spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+            outputs = model(spatial_features, temporal_features)
 
             all_predictions.append(outputs.cpu().numpy())
             all_labels.append(labels.cpu().numpy())
@@ -85,7 +80,7 @@ def calculate_climatology_baseline(labels_df: pd.DataFrame, config: dict) -> pd.
     
     return climatology_preds_df
 
-def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir, model_type):
+def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir):
     """Creates and saves time-series and scatter plots."""
     persistence_preds_df = labels_df.shift(1)
     
@@ -97,21 +92,21 @@ def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir, mode
 
     plt.figure(figsize=(15, 7))
     plt.plot(labels_df.loc[plot_slice].index, labels_df.loc[plot_slice, region_to_plot], label='Actual Values', color='black', linewidth=2)
-    plt.plot(nn_preds_df.loc[plot_slice].index, nn_preds_df.loc[plot_slice, region_to_plot], label=f'{model_type.upper()} Predictions', color='blue', linestyle='--')
+    plt.plot(nn_preds_df.loc[plot_slice].index, nn_preds_df.loc[plot_slice, region_to_plot], label='CNN Predictions', color='blue', linestyle='--')
     plt.plot(persistence_preds_df.loc[plot_slice].index, persistence_preds_df.loc[plot_slice, region_to_plot], label='Persistence Baseline', color='green', linestyle=':')
  
     plt.plot(climatology_preds_df.loc[plot_slice].index, climatology_preds_df.loc[plot_slice, region_to_plot], label='Climatology Baseline', color='red', linestyle='-.')
     
-    plt.title(f'{model_type.upper()} Predictions vs Actuals for {region_to_plot} - {start_date.strftime("%B %Y")}')
+    plt.title(f'CNN Predictions vs Actuals for {region_to_plot} - {start_date.strftime("%B %Y")}')
     plt.xlabel('Date'); plt.ylabel('Capacity Factor')
     plt.legend(); plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.savefig(results_dir / f'timeseries_plot_{model_type}.png')
+    plt.savefig(results_dir / 'timeseries_plot_cnn.png')
     logger.info(f"Time-series plot saved to {results_dir}.")
     plt.close()
 
-def evaluate(config_name: str, model_type: str, study_name: str):
+def evaluate(config_name: str, study_name: str):
     """Main evaluation function."""
-    logger.info(f"--- Starting Final Model Evaluation for '{model_type}' ---")
+    logger.info("--- Starting Final Model Evaluation for 'cnn' ---")
     
     # 1. SETUP & DATA LOADING
     config = load_config(config_name)
@@ -121,7 +116,7 @@ def evaluate(config_name: str, model_type: str, study_name: str):
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     try:
         if study_name == 'latest':
-            study_dir = get_latest_study_dir(results_parent_dir, model_type)
+            study_dir = get_latest_study_dir(results_parent_dir)
             study_name = study_dir.name
         else:
             study_dir = results_parent_dir / study_name
@@ -131,7 +126,7 @@ def evaluate(config_name: str, model_type: str, study_name: str):
         return
     
     logger.info("Loading test set data...")
-    test_dataset = FencastDataset(config=config, mode='test', model_type=model_type)
+    test_dataset = FencastDataset(config=config, mode='test')
     batch_size = config.get('model', {}).get('batch_sizes', {}).get('evaluation', 256)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
     
@@ -143,15 +138,12 @@ def evaluate(config_name: str, model_type: str, study_name: str):
         return
     
     checkpoint = torch.load(final_model_path, map_location=device)
-    if checkpoint.get('model_type') == 'cnn':
-        model = DynamicCNN(**checkpoint['model_args']).to(device)
-    else:
-        model = DynamicFFNN(**checkpoint['model_args']).to(device)
+    model = DynamicCNN(**checkpoint['model_args']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     # 3. GET PREDICTIONS
     logger.info("Generating predictions on the test set...")
-    predictions_np, labels_np = get_predictions(model, test_loader, device, model_type)
+    predictions_np, labels_np = get_predictions(model, test_loader, device)
     
     labels_df = pd.DataFrame(labels_np, index=test_dataset.y.index, columns=test_dataset.y.columns)
     preds_df = pd.DataFrame(predictions_np, index=test_dataset.y.index, columns=test_dataset.y.columns)
@@ -176,22 +168,18 @@ def evaluate(config_name: str, model_type: str, study_name: str):
     logger.info(f"  Climatology Model (1990-1999 Avg):")
     logger.info(f"    RMSE: {climatology_rmse:.6f}")
     logger.info(f"    MAE:  {climatology_mae:.6f}")
-    logger.info(f"  {model_type.upper()} Model:")
+    logger.info(f"  CNN Model:")
     logger.info(f"    RMSE: {nn_rmse:.6f}")
     logger.info(f"    MAE:  {nn_mae:.6f}")
     logger.info("="*35)
 
     # 5. VISUALIZE RESULTS
     logger.info("Creating visualizations...")
-    create_plots(labels_df, preds_df, climatology_preds_df, study_dir, model_type)
+    create_plots(labels_df, preds_df, climatology_preds_df, study_dir)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate a trained model on the test set.')
     parser.add_argument('--config', '-c', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('--model-type', '-m',
-                        choices=['ffnn', 'cnn'], 
-                        default='cnn',
-                        help='The model architecture to evaluate.')
     parser.add_argument('--study-name', '-s', default='latest', help='Study directory to use for saving plots (default: latest for the given model-type).')
     args = parser.parse_args()
-    evaluate(config_name=args.config, model_type=args.model_type, study_name=args.study_name)
+    evaluate(config_name=args.config, study_name=args.study_name)

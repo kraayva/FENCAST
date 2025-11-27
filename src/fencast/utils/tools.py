@@ -61,11 +61,11 @@ def setup_logger(prefix: str = "default"):
     return logger
 
 
-def get_latest_study_dir(results_parent_dir: Path, model_type: str = "cnn") -> Path:
-    prefix = f"study_{model_type}"
+def get_latest_study_dir(results_parent_dir: Path) -> Path:
+    prefix = "study_cnn"
     model_studies = [d for d in results_parent_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
     if not model_studies:
-        raise FileNotFoundError(f"No study found for model type '{model_type}' in {results_parent_dir}")
+        raise FileNotFoundError(f"No study found for model type 'cnn' in {results_parent_dir}")
     return sorted(model_studies, key=lambda f: f.stat().st_mtime, reverse=True)[0]
 
 

@@ -24,27 +24,25 @@ class KFoldCrossValidator:
     K-Fold Cross Validation for FENCAST models.
     """
     
-    def __init__(self, config: Dict[str, Any], model_type: str, params: Dict[str, Any], 
+    def __init__(self, config: Dict[str, Any], params: Dict[str, Any], 
                  k_folds: int = 5, logger=None):
         """
         Initialize the K-Fold cross validator.
         
         Args:
             config: Project configuration dictionary
-            model_type: Model architecture ('ffnn' or 'cnn')
             params: Training hyperparameters
             k_folds: Number of folds for cross validation
             logger: Logger instance
         """
         self.config = config
-        self.model_type = model_type
         self.params = validate_training_parameters(params)
         self.k_folds = k_folds
         self.logger = logger
         self.results = []
         
         if self.logger:
-            self.logger.info(f"Initialized {k_folds}-fold cross validator for {model_type} model")
+            self.logger.info(f"Initialized {k_folds}-fold cross validator for CNN model")
     
     def create_fold_splits(self) -> List[Tuple[List[int], List[int]]]:
         """
@@ -140,7 +138,7 @@ class KFoldCrossValidator:
         fold_config = self.create_fold_config(fold_idx, train_years, val_years)
         
         # Create trainer for this fold
-        trainer = ModelTrainer(fold_config, self.model_type, self.params, self.logger)
+        trainer = ModelTrainer(fold_config, self.params, self.logger)
         
         # Create custom data loaders with specific years for this fold
         train_loader, val_loader = trainer.create_custom_data_loaders(train_years, val_years)
@@ -219,7 +217,6 @@ class KFoldCrossValidator:
         if val_losses:
             cv_summary = {
                 'k_folds': self.k_folds,
-                'model_type': self.model_type,
                 'params': self.params,
                 'fold_results': fold_results,
                 'cv_mean_loss': np.mean(val_losses),
@@ -268,8 +265,6 @@ def main():
     )
     parser.add_argument('--config', '-c', default='datapp_de',
                        help='Configuration file name')
-    parser.add_argument('--model-type', '-m', required=True, choices=['ffnn', 'cnn'],
-                       help='Model architecture to validate')
     parser.add_argument('--study-name', '-s', default='latest',
                        help='Study name to load hyperparameters from')
     parser.add_argument('--k-folds', '-k', type=int, default=5,
@@ -281,7 +276,7 @@ def main():
     
     # Setup logging
     logger = setup_logger("cross_validation")
-    logger.info(f"Starting {args.k_folds}-fold cross validation for {args.model_type} model")
+    logger.info(f"Starting {args.k_folds}-fold cross validation for CNN model")
     
     # Load configuration
     config = load_config(args.config)
@@ -291,7 +286,6 @@ def main():
     # Load hyperparameters from study
     params, study_dir = load_best_params_from_study(
         results_parent_dir=results_parent_dir,
-        model_type=args.model_type,
         study_name=args.study_name
     )
     
@@ -306,7 +300,7 @@ def main():
     logger.info(f"Results will be saved to: {results_dir}")
     
     # Create cross validator and run
-    cv = KFoldCrossValidator(config, args.model_type, params, args.k_folds, logger)
+    cv = KFoldCrossValidator(config, params, args.k_folds, logger)
     cv_results = cv.run_cross_validation(results_dir)
     
     # Print final summary
@@ -314,7 +308,7 @@ def main():
         print(f"\\n{'='*50}")
         print(f"K-FOLD CROSS VALIDATION RESULTS")
         print(f"{'='*50}")
-        print(f"Model: {args.model_type}")
+        print(f"Model: CNN")
         print(f"Folds: {args.k_folds}")
         print(f"Mean ± Std: {cv_results['cv_mean_loss']:.6f} ± {cv_results['cv_std_loss']:.6f}")
         print(f"Min / Max: {cv_results['cv_min_loss']:.6f} / {cv_results['cv_max_loss']:.6f}")

@@ -11,13 +11,12 @@ from fencast.utils.tools import setup_logger, get_latest_study_dir
 from fencast.utils.experiment_management import load_best_params_from_study
 from fencast.training import ModelTrainer, validate_training_parameters
 
-def run_training(config: dict, model_type: str, params: dict, study_dir: Path, use_all_data: bool = False) -> dict:
+def run_training(config: dict, params: dict, study_dir: Path, use_all_data: bool = False) -> dict:
     """
     Main function to run the model training and validation process using a given set of hyperparameters.
     
     Args:
         config (dict): The project's configuration dictionary.
-        model_type (str): The model architecture to train ('ffnn' or 'cnn').
         params (dict): A dictionary containing all necessary hyperparameters for the model.
         study_dir (Path): Directory where the study results and model checkpoints will be saved.
         use_all_data (bool): Whether to use all available data (training + validation) for training. Default is False.
@@ -26,7 +25,7 @@ def run_training(config: dict, model_type: str, params: dict, study_dir: Path, u
     logger.info(f"Using device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
     
     # Create trainer instance
-    trainer = ModelTrainer(config, model_type, params, logger)
+    trainer = ModelTrainer(config, params, logger)
     
     # Create data loaders based on the training mode
     if use_all_data:
@@ -83,11 +82,6 @@ if __name__ == '__main__':
         default='datapp_de',
         help='Configuration file name (default: datapp_de)'
     )
-    parser.add_argument('--model-type', '-m',
-        choices=['ffnn', 'cnn'],
-        default='cnn',
-        help='The model architecture to train.'
-    )
     parser.add_argument(
         '--study-name', '-s',
         default='latest',
@@ -112,7 +106,6 @@ if __name__ == '__main__':
     logger.info("--- Loading best hyperparameters from Optuna study ---")
     params, study_dir = load_best_params_from_study(
         results_parent_dir=results_parent_dir,
-        model_type=args.model_type,
         study_name=args.study_name
     )
 
@@ -124,7 +117,6 @@ if __name__ == '__main__':
     # Run final training
     run_training(
         config=config,
-        model_type=args.model_type,
         params=final_params,
         study_dir=study_dir,
         use_all_data=args.final_run

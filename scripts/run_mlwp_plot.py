@@ -19,7 +19,6 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('config', nargs='?', default='datapp_de', help='Configuration file name (default: datapp_de)')
-    parser.add_argument('model_type', nargs='?', default='cnn', help='Model architecture (default: cnn)')
     parser.add_argument('study_name', nargs='?', default='latest', help='Study name to load results from (default: "latest")')
     
     # Weather data options
@@ -87,7 +86,6 @@ def main():
         if plot_type == 'seasons':
             create_mlwp_seasonal_plot(
                 config_name=args.config,
-                model_type=args.model_type,
                 study_name=args.study_name,
                 persistence_lead_times=args.persistence_lead_times,
                 figsize=tuple(args.figsize),
@@ -99,7 +97,6 @@ def main():
         elif plot_type == 'rmse_mae':
             create_mlwp_rmse_mae_plot(
                 config_name=args.config,
-                model_type=args.model_type,
                 study_name=args.study_name,
                 figsize=tuple(args.figsize),
                 mlwp_names=args.mlwp_name,
@@ -120,7 +117,6 @@ def main():
 
             create_mlwp_plot(
                 config_name=args.config,
-                model_type=args.model_type,
                 study_name=args.study_name,
                 weather_rmse_file=weather_file,
                 show_persistence=show_persistence,

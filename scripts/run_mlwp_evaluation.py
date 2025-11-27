@@ -120,8 +120,6 @@ def evaluate_model_on_mlwp(config: dict, model: nn.Module, setup_name: str, stud
     
     # Load processed labels (already at correct 12:00 timestamps) if available
     labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_cnn.parquet"
-    if not labels_file.exists():
-        labels_file = PROCESSED_DATA_DIR / f"{setup_name}_labels_ffnn.parquet"
     
     if labels_file.exists():
         logger.info(f"Loading processed labels from: {labels_file}")
@@ -228,7 +226,7 @@ def main():
     # Find the study directory and load the trained model
     results_parent_dir = PROJECT_ROOT / "results" / setup_name
     
-    study_dir = get_latest_study_dir(results_parent_dir, model_type='cnn') if args.study_name == 'latest' else results_parent_dir / args.study_name
+    study_dir = get_latest_study_dir(results_parent_dir) if args.study_name == 'latest' else results_parent_dir / args.study_name
     model = load_trained_model(
         study_dir=study_dir, 
         use_final_model=args.final_model, 

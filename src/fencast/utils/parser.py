@@ -32,10 +32,6 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
         parser.add_argument('--study-name', default='latest',
                             help='Study name to load results from (default: "latest")')
         
-    if 'model_type' in arguments:
-        parser.add_argument('--model-type', default='final_model',
-                            help='Type of model to use (default: "final_model")')
-    
     ## Flags
 
     if 'override' in arguments:

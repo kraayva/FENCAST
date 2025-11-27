@@ -73,9 +73,6 @@ cross_validation:
 
 # Model architecture settings for final training
 model:
-  ffnn:
-    hidden_layers: [1024, 512]
-    dropout_rate: 0.3
   cnn:
   batch_sizes:
     training: 64
@@ -100,26 +97,6 @@ tuning:
     log_scale: true
 
   early_stopping_patience: 6
-
-# FFNN-specific hyperparameter
-ffnn_tuning:
-  lr:
-    type: float
-    min: 5.0e-6
-    max: 5.0e-3
-    log_scale: true
-  dropout:
-    type: float
-    min: 0.05
-    max: 0.3
-  hidden_layers:
-    type: list
-    values: [3, 4, 5]
-  hidden_layers_units:
-    type: int
-    step: 64
-    min: 256
-    max: 2048
 
 # CNN-specific hyperparameter
 cnn_tuning:

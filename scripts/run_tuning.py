@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 # Import custom modules
 from fencast.dataset import FencastDataset
-from fencast.models import DynamicCNN, DynamicFFNN
+from fencast.models import DynamicCNN
 from fencast.utils.paths import PROJECT_ROOT, load_config
 from fencast.utils.tools import setup_logger
 
@@ -73,19 +73,19 @@ def suggest_parameter(trial: optuna.Trial, param_name: str, param_config, logger
         return param_config
 
 
-def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
+def objective(trial: optuna.Trial, config: dict) -> float:
     """
     Optuna objective function to tune hyperparameters for a given model architecture.
     Intelligently determines what to tune vs. what to keep fixed based on config structure.
     """
     # 1. SETUP & HYPERPARAMETER SUGGESTIONS
     # ============================================================================
-    logger.info(f"--- Starting Trial {trial.number} for model_type='{model_type}' ---")
+    logger.info(f"--- Starting Trial {trial.number} ---")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Merge general tuning config with model-specific config
     tuning_config = config.get('tuning', {})
-    model_specific_key = f"{model_type}_tuning"
+    model_specific_key = "cnn_tuning"
     model_tuning_config = config.get(model_specific_key, {})
     
     # Combine both configs - model-specific overrides general
@@ -108,28 +108,14 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         else:
             params[param_name] = suggest_parameter(trial, param_name, param_config, logger)
     
-    # Handle special cases for model-specific parameters
-    if model_type == 'ffnn':
-        # Handle hidden layers configuration
-        if 'hidden_layers' in params:
-            n_layers = params['hidden_layers']
-            if 'hidden_layers_units' in params:
-                # Create hidden layers with tuned number of units
-                hidden_layers = [params['hidden_layers_units']] * n_layers
-                params['hidden_layers'] = hidden_layers
-                logger.info(f"Created {n_layers} hidden layers with {params['hidden_layers_units']} units each")
-            else:
-                logger.info(f"Using fixed hidden layers: {params['hidden_layers']}")
-    
-    elif model_type == 'cnn':
-        # Handle filters configuration - create filter list for each conv layer
-        if 'filters' in params and 'n_conv_layers' in params:
-            n_filters = params['filters']
-            n_layers = params['n_conv_layers']
-            params['out_channels'] = [n_filters] * n_layers
-            logger.info(f"Created {n_layers} conv layers with {n_filters} filters each")
-            # Remove the individual filter parameter as it's now in out_channels
-            del params['filters']
+    # Handle filters configuration - create filter list for each conv layer
+    if 'filters' in params and 'n_conv_layers' in params:
+        n_filters = params['filters']
+        n_layers = params['n_conv_layers']
+        params['out_channels'] = [n_filters] * n_layers
+        logger.info(f"Created {n_layers} conv layers with {n_filters} filters each")
+        # Remove the individual filter parameter as it's now in out_channels
+        del params['filters']
         
     # Set defaults for missing required parameters
     if 'lr' not in params:
@@ -147,8 +133,8 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     # 2. DATA LOADING
     # ============================================================================
     logger.info(f"Trial {trial.number}: Loading data...")
-    train_dataset = FencastDataset(config=config, mode='train', model_type=model_type)
-    validation_dataset = FencastDataset(config=config, mode='validation', model_type=model_type)
+    train_dataset = FencastDataset(config=config, mode='train')
+    validation_dataset = FencastDataset(config=config, mode='validation')
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     validation_loader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=False)
     logger.info(f"Trial {trial.number}: Data loading complete.")
@@ -156,27 +142,18 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
     # 3. MODEL, LOSS, and OPTIMIZER INITIALIZATION
     # ============================================================================
     model = None
-    if model_type == 'ffnn':
-        model = DynamicFFNN(
-            input_size=config['input_size_flat'],
-            output_size=output_size,
-            hidden_layers=params['hidden_layers'],
-            dropout_rate=params['dropout_rate'],
-            activation_fn=getattr(nn, params['activation_name'])()
+    try:
+        model = DynamicCNN(
+            config=config,
+            params=params
         ).to(device)
-    elif model_type == 'cnn':
-        try:
-            model = DynamicCNN(
-                config=config,
-                params=params
-            ).to(device)
-        except ValueError as e:
-            # Handle BatchNorm spatial dimension errors
-            if "Expected more than 1 value per channel" in str(e):
-                logger.warning(f"Trial {trial.number}: CNN architecture invalid (spatial dims too small), returning poor score")
-                return 1.0  # Return a poor score instead of crashing
-            else:
-                raise e
+    except ValueError as e:
+        # Handle BatchNorm spatial dimension errors
+        if "Expected more than 1 value per channel" in str(e):
+            logger.warning(f"Trial {trial.number}: CNN architecture invalid (spatial dims too small), returning poor score")
+            return 1.0  # Return a poor score instead of crashing
+        else:
+            raise e
 
     criterion = nn.MSELoss()
     
@@ -208,14 +185,9 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         model.train()
         training_losses = []
         for batch in train_loader:
-            if model_type == 'cnn':
-                spatial_features, temporal_features, labels = batch
-                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
-                outputs = model(spatial_features, temporal_features)
-            else: # FFNN
-                features, labels = batch
-                features, labels = features.to(device), labels.to(device)
-                outputs = model(features)
+            spatial_features, temporal_features, labels = batch
+            spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+            outputs = model(spatial_features, temporal_features)
             
             loss = criterion(outputs, labels)
             optimizer.zero_grad()
@@ -229,14 +201,9 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
         validation_losses = []
         with torch.no_grad():
             for batch in validation_loader:
-                if model_type == 'cnn':
-                    spatial_features, temporal_features, labels = batch
-                    spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
-                    outputs = model(spatial_features, temporal_features)
-                else: # FFNN
-                    features, labels = batch
-                    features, labels = features.to(device), labels.to(device)
-                    outputs = model(features)
+                spatial_features, temporal_features, labels = batch
+                spatial_features, temporal_features, labels = spatial_features.to(device), temporal_features.to(device), labels.to(device)
+                outputs = model(spatial_features, temporal_features)
                 
                 loss = criterion(outputs, labels)
                 validation_losses.append(loss.item())
@@ -266,13 +233,6 @@ def objective(trial: optuna.Trial, model_type: str, config: dict) -> float:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run hyperparameter tuning for a given model architecture.")
     parser.add_argument(
-        '--model-type', '-m',
-        type=str,
-        choices=['ffnn', 'cnn'],
-        required=True,
-        help="The type of model architecture to tune ('ffnn' or 'cnn')."
-    )
-    parser.add_argument(
         '--config', '-c',
         type=str,
         default='datapp_de',
@@ -289,13 +249,13 @@ if __name__ == '__main__':
     config = load_config(args.config)
     current_date = datetime.now().strftime('%Y%m%d')
     setup_name = config.get('setup_name', 'default_setup')
-    study_name = args.study_name or f"study_{args.model_type}_{setup_name}_{current_date}"
+    study_name = args.study_name or f"study_cnn_{setup_name}_{current_date}"
 
     results_dir = PROJECT_ROOT / "results" / setup_name / study_name
     results_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Config '{args.config}' loaded.")
-    logger.info(f"Starting new study: '{study_name}' for model '{args.model_type}'")
+    logger.info(f"Starting new study: '{study_name}' for model 'cnn'")
     logger.info(f"Study results will be saved in: {results_dir}")
 
     db_path = results_dir / f"{study_name}.db"
@@ -315,7 +275,7 @@ if __name__ == '__main__':
     )
 
     n_trials = config.get('tuning', {}).get('trials', 50)
-    study.optimize(lambda trial: objective(trial, model_type=args.model_type, config=config), n_trials=n_trials, n_jobs=2)
+    study.optimize(lambda trial: objective(trial, config=config), n_trials=n_trials, n_jobs=2)
     
     logger.info("--- Tuning Finished ---")
     if len(study.trials) > 0:
