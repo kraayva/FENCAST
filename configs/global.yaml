@@ -15,6 +15,7 @@ gsWB2_ifs_data: gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr
 
 ## DEFAULTS
 defaults: 
-  config: 'wind01'
+  config: 'wind02'
   study_name: 'latest'
+  model_name: 'final_model'
   

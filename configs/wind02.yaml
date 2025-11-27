@@ -3,12 +3,7 @@
 # This configuration uses more flexible height levels and relative humidity instead of specific humidity.
 
 # General settings
-setup_name: 'de_uvtzrh_woncf_NUTS2'
-
-title: 'wind capacity factor from variables u,v,t,z,rh'
-short_title: 'wind01'
-long_title: 'Wind Capacity Factor Prediction using ERA5 Variables u, v, t, z, rh'
-
+setup_name: 'de_uvz_woncf_NUTS2'
 
 # Data Processing Settings
 data_processing:
@@ -33,9 +28,7 @@ era5_data_raw:
 feature_var_names:
   u_component_of_wind: 'u'
   v_component_of_wind: 'v'
-  temperature: 't'
   geopotential: 'z'
-  relative_humidity: 'rh'
 
 era5_dataset_url: 'gs://weatherbench2/datasets/era5/1959-2022-6h-1440x721.zarr'
 
@@ -52,7 +45,7 @@ feature_variables:
   geopotential: [1000, 500]
   specific_humidity: [925, 700]
 
-feature_level: [300, 500, 700, 850, 1000]
+feature_level: [700, 850, 925, 1000]
 
 # Dataset splitting configuration
 split_years:
@@ -122,9 +115,9 @@ cnn_tuning:
     values: [2, 3, 4]
   filters:
     type: int
-    min: 24
-    max: 120
-    step: 12
+    min: 16
+    max: 64
+    step: 8
   kernel_size: 
     type: list
     values: [3, 4, 5]

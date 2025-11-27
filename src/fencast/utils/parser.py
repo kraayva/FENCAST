@@ -16,7 +16,7 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
     ## Add arguments based on the provided list
     if 'config' in arguments:
         default_config = cfg.get('defaults').get('config')
-        parser.add_argument('config', nargs='?',
+        parser.add_argument('--config', '-c', nargs='?',
                             default=default_config, 
                             help=f"Configuration file name")
 
@@ -114,8 +114,9 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
                            help='Disable total weather RMSE')
 
     if 'model_name' in arguments:
-        parser.add_argument('--model-name', default='best_model',
-                           help='Model directory name to use (default: best_model)')
+        default_model_name = cfg.get('defaults').get('model_name')
+        parser.add_argument('--model-name', default=f'{default_model_name}',
+                           help=f'Model directory name to use (default: {default_model_name})')
 
     if 'mlwp_name' in arguments:
         parser.add_argument('--mlwp-name', '-n', nargs='+', default=['pangu'],

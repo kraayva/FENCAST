@@ -105,9 +105,9 @@ def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir):
     logger.info(f"Time-series plot saved to {results_dir}.")
     plt.close()
 
-def evaluate(config_name: str, study_name: str):
+def evaluate(config_name: str, study_name: str, model_name: str):
     """Main evaluation function."""
-    logger.info("--- Starting Final Model Evaluation for 'cnn' ---")
+    logger.info(f"--- Starting Final Model Evaluation for '{model_name}' ---")
     
     # 1. SETUP & DATA LOADING
     config = load_config(config_name)
@@ -133,12 +133,12 @@ def evaluate(config_name: str, study_name: str):
     
     # 2. LOAD BEST MODEL
     logger.info("Loading best trained model...")
-    final_model_path = study_dir / "best_model.pth"
-    if not final_model_path.exists():
-        logger.error(f"Final model not found at {final_model_path}. Please run training first.")
+    model_path = study_dir / f"{model_name}.pth"
+    if not model_path.exists():
+        logger.error(f"{model_name}.pth not found at {model_path}. Please run training first.")
         return
     
-    checkpoint = torch.load(final_model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model = DynamicCNN(**checkpoint['model_args']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
@@ -179,7 +179,7 @@ def evaluate(config_name: str, study_name: str):
     create_plots(labels_df, preds_df, climatology_preds_df, study_dir)
 
 if __name__ == '__main__':
-    parser_names = ['config', 'study_name']
+    parser_names = ['config', 'study_name', 'model_name']
     parser = get_parser(parser_names, description="Evaluate a trained model on the test set.")
     args = parser.parse_args()
 
@@ -187,4 +187,4 @@ if __name__ == '__main__':
         config = load_config()
         args.config = config.get('default_config')
     
-    evaluate(config_name=args.config, study_name=args.study_name)
+    evaluate(config_name=args.config, study_name=args.study_name, model_name=args.model_name)

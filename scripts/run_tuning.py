@@ -238,16 +238,17 @@ if __name__ == '__main__':
     config = load_config(args.config)
     current_date = datetime.now().strftime('%Y%m%d')
     setup_name = config.get('setup_name', 'default_setup')
-    study_name = args.study_name or f"study_cnn_{setup_name}_{current_date}"
+    if args.study_name == 'latest':
+        args.study_name = f"study_cnn_{setup_name}_{current_date}"
 
-    results_dir = PROJECT_ROOT / "results" / setup_name / study_name
+    results_dir = PROJECT_ROOT / "results" / setup_name / args.study_name
     results_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Config '{args.config}' loaded.")
-    logger.info(f"Starting new study: '{study_name}' for model 'cnn'")
+    logger.info(f"Starting new study: '{args.study_name}' for model 'cnn'")
     logger.info(f"Study results will be saved in: {results_dir}")
 
-    db_path = results_dir / f"{study_name}.db"
+    db_path = results_dir / f"{args.study_name}.db"
     storage_name = f"sqlite:///{db_path}"
     pruner = optuna.pruners.MedianPruner(
         n_startup_trials=5, # number of trials before pruning
@@ -256,7 +257,7 @@ if __name__ == '__main__':
     )
 
     study = optuna.create_study(
-        study_name=study_name,
+        study_name=args.study_name,
         storage=storage_name,
         load_if_exists=True,
         direction='minimize',

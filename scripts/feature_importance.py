@@ -48,7 +48,7 @@ def get_cnn_channel_map(config: dict) -> dict:
             channel_idx += 1
     return channel_map
 
-def run_feature_importance(config_name: str, study_name: str):
+def run_feature_importance(config_name: str, study_name: str, model_name: str):
     """Performs grouped permutation feature importance analysis for the CNN model."""
     logger.info(f"--- Starting Feature Importance Analysis for CNN model ---")
     
@@ -69,11 +69,11 @@ def run_feature_importance(config_name: str, study_name: str):
         return
 
     logger.info("Loading best trained model...")
-    final_model_path = study_dir / "best_model.pth"
-    if not final_model_path.exists():
-        raise FileNotFoundError(f"Model file not found at {final_model_path}")
+    model_path = study_dir / f"{model_name}.pth"
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found at {model_path}")
     
-    checkpoint = torch.load(final_model_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
     model = DynamicCNN(**checkpoint['model_args']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -236,10 +236,11 @@ def run_feature_importance(config_name: str, study_name: str):
         logger.info(f"Saved {group_type} importance plot to {save_path}")
 
 if __name__ == '__main__':
-    parser = get_parser(['config', 'study_name'], description='Run permutation feature importance analysis.')
+    parser = get_parser(['config', 'study_name', 'model_name'], description='Run permutation feature importance analysis.')
     args = parser.parse_args()
     
     run_feature_importance(
         config_name=args.config, 
-        study_name=args.study_name
+        study_name=args.study_name,
+        model_name=args.model_name
     )
