@@ -71,6 +71,10 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
         parser.add_argument('--k-folds', '-k', type=int, default=5,
                            help='Number of folds for cross validation')
 
+    if 'top_n' in arguments:
+        parser.add_argument('--top-n', '-n', type=int, default=5,
+                           help='Number of top trials to cross-validate')
+
     if 'results_dir' in arguments:
         parser.add_argument('--results-dir', '-r', 
                            help='Custom results directory (default: creates CV subdirectory in study dir)')
@@ -119,8 +123,8 @@ def get_parser(arguments: list, description: str = None) -> 'argparse.ArgumentPa
                            help=f'Model directory name to use (default: {default_model_name})')
 
     if 'mlwp_name' in arguments:
-        parser.add_argument('--mlwp-name', '-n', nargs='+', default=['pangu'],
-                           help='MLWP model name(s) for data loading (default: pangu)')
+        parser.add_argument('--mlwp-name', '-n', nargs='+', default=['pangu', 'ifs'],
+                           help='MLWP model name(s) for data loading (default: pangu ifs)')
 
     if 'persistence_lead_times' in arguments:
         parser.add_argument('--persistence-lead-times', nargs='+', type=int,

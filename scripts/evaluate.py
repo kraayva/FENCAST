@@ -87,8 +87,8 @@ def create_plots(labels_df, nn_preds_df, climatology_preds_df, results_dir):
     
     # --- Time-Series Plot (with Baselines) ---
     region_to_plot = labels_df.columns[0]
-    start_date = labels_df.index.min()
-    end_date = start_date + pd.Timedelta(days=30)
+    start_date = labels_df.index.min() + pd.Timedelta(days=240)
+    end_date = start_date + pd.Timedelta(days=60)
     plot_slice = slice(start_date, end_date)
 
     plt.figure(figsize=(15, 7))
@@ -166,7 +166,7 @@ def evaluate(config_name: str, study_name: str, model_name: str):
     logger.info(f"  Persistence Model:")
     logger.info(f"    RMSE: {persistence_rmse:.6f}")
     logger.info(f"    MAE:  {persistence_mae:.6f}")
-    logger.info(f"  Climatology Model (1990-1999 Avg):")
+    logger.info(f"  Climatology Model (1999-2009 Avg):")
     logger.info(f"    RMSE: {climatology_rmse:.6f}")
     logger.info(f"    MAE:  {climatology_mae:.6f}")
     logger.info(f"  CNN Model:")

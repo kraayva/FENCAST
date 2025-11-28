@@ -47,6 +47,47 @@ def load_best_params_from_study(results_parent_dir: Path, study_name: str = 'lat
         raise
 
 
+def load_top_n_trials_from_study(results_parent_dir: Path, n: int = 5, study_name: str = 'latest') -> list:
+    """
+    Loads the top N trials (by validation loss) from a specified Optuna study.
+
+    Args:
+        results_parent_dir (Path): The parent directory containing all study results.
+        n (int): Number of top trials to return.
+        study_name (str): The name of the study to load from. 'latest' will find the most recent one.
+
+    Returns:
+        list: A list of tuples (trial_number, params, value, study_dir) for the top N trials.
+    """
+    try:
+        if study_name == 'latest':
+            study_dir = get_latest_study_dir(results_parent_dir)
+        else:
+            study_dir = results_parent_dir / study_name
+
+        study_db_name = study_dir.name
+        storage_name = f"sqlite:///{study_dir / study_db_name}.db"
+
+        study = optuna.load_study(study_name=study_db_name, storage=storage_name)
+        
+        # Get all completed trials and sort by value (ascending for minimization)
+        completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        sorted_trials = sorted(completed_trials, key=lambda t: t.value)
+        
+        # Take top N trials
+        top_trials = sorted_trials[:n]
+        
+        logger.info(f"Loaded top {len(top_trials)} trials from study: '{study_dir.name}'")
+        for i, trial in enumerate(top_trials):
+            logger.info(f"  #{i+1}: Trial {trial.number}, Loss: {trial.value:.6f}")
+
+        return [(trial.number, trial.params, trial.value, study_dir) for trial in top_trials]
+
+    except Exception as e:
+        logger.error(f"Failed to load study '{study_name}': {e}")
+        raise
+
+
 def load_trained_model(study_dir: Path, use_final_model: bool = False, device: str = 'cpu') -> torch.nn.Module:
     """
     Loads a trained model checkpoint from a study directory.

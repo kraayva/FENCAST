@@ -245,8 +245,8 @@ def calculate_mlwp_weather_rmse(config: dict,
                 # Load ERA5 reference data
                 era5_data = load_era5_data(var_name)
                 
-                # Load MLWP prediction data
-                mlwp_data = load_mlwp_data(mlwp_name, td_str, var_name)
+                # Load MLWP prediction data (pass integer days, not string)
+                mlwp_data = load_mlwp_data(mlwp_name, td, var_name)
                 
                 # Calculate RMSE for this variable
                 variable_rmse = calculate_variable_rmse(era5_data, mlwp_data, var_name, config, td)

@@ -15,6 +15,10 @@ time_end: '2024-12-31'
 target_data_raw: 'data/raw/wind_onshore_cfr_NUTS2-DE.csv'
 target_size: 37
 
+title: 'wind capacity factor from variables u,v,t,z,rh'
+short_title: 'wind_cfr'
+long_title: 'Wind Capacity Factor Prediction using ERA5 Variables u, v, z'
+
 # Feature data settings
 input_size_flat: 20297
 input_channels: 1 
@@ -65,7 +69,7 @@ split_years:
 # Cross Validation Configuration
 cross_validation:
   k_folds: 5
-  epochs: 30  # Typically fewer epochs than tuning since we're using pre-optimized hyperparameters
+  epochs: 35  # Typically fewer epochs than tuning since we're using pre-optimized hyperparameters
   validation_metric: 'mse_loss'  # Metric to use for fold comparison
   save_individual_models: true   # Save best model from each fold
   year_based_splitting: true     # Use year-based splits for temporal consistency

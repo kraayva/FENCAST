@@ -279,7 +279,8 @@ class MLWPPlotter:
                 self._plot_weather_predictions(ax2, show_weather_total, show_weather_variables)
                 self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times)
                 ax1.set_xlabel('Forecast Lead Time (Days)', fontsize=12)
-                ax1.set_ylabel('Solar Capacity Factor RMSE', fontsize=12, color='blue')
+                short_title = self.config.get('short_title', 'CF')
+                ax1.set_ylabel(f'{short_title} RMSE', fontsize=12, color='blue')
                 ax2.set_ylabel('Weather Prediction RMSE (Normalized)', fontsize=12, color='red')
                 ax1.tick_params(axis='y', labelcolor='blue')
                 ax2.tick_params(axis='y', labelcolor='red')
@@ -303,14 +304,15 @@ class MLWPPlotter:
                 self._plot_baselines(ax1, show_persistence, show_climatology, persistence_lead_times, region_filter=group1_regions)
                 ax1.set_title('Southern & Central German States')
                 ax1.set_xlabel('Forecast Lead Time (Days)')
-                ax1.set_ylabel('Solar Capacity Factor RMSE')
+                short_title = self.config.get('short_title', 'CF')
+                ax1.set_ylabel(f'{short_title} RMSE')
                 
                 # Plot Group 2 (Northern/Eastern regions)
                 self._plot_energy_predictions(ax2, region_filter=group2_regions)
                 self._plot_baselines(ax2, show_persistence, show_climatology, persistence_lead_times, region_filter=group2_regions)
                 ax2.set_title('Northern & Eastern German States')
                 ax2.set_xlabel('Forecast Lead Time (Days)')
-                ax2.set_ylabel('Solar Capacity Factor RMSE')
+                ax2.set_ylabel(f'{short_title} RMSE')
                 
                 # Set same x-ticks for both plots
                 x_ticks = sorted(self.energy_data['timedelta_days'].unique())
@@ -333,9 +335,10 @@ class MLWPPlotter:
                 # Plot baselines
                 self._plot_baselines(plt.gca(), show_persistence, show_climatology, persistence_lead_times)
                 
-                plt.title(f'Predicted CF RMSE from MLWP Forecasts vs. Lead Time')
+                short_title = self.config.get('short_title', 'CF')
+                plt.title(f'Predicted {short_title} RMSE from MLWP Forecasts vs. Lead Time')
                 plt.xlabel('Forecast Lead Time (Days)')
-                plt.ylabel('Solar Capacity Factor RMSE')
+                plt.ylabel(f'{short_title} RMSE')
 
                 # Handle legend positioning based on number of entries
                 handles, labels = plt.gca().get_legend_handles_labels()
@@ -358,7 +361,8 @@ class MLWPPlotter:
             # Choose suffix based on plotting mode
             suffix = "regions" if self.per_region else "mean"
             mlwp_names_str = "_".join(self.mlwp_names)
-            filename = f"{mlwp_names_str}_cf_rmse_{suffix}"
+            short_title = self.config.get('short_title', 'cf')
+            filename = f"{mlwp_names_str}_{short_title}_rmse_{suffix}"
             filename += "_weather.png" if not self.weather_data.empty else ".png"
             model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
@@ -473,10 +477,11 @@ class MLWPPlotter:
                            marker='o', linewidth=2, color=color, label=label)
         else:
             # Original behavior: one line per MLWP model (averaged across regions)
+            short_title = self.config.get('short_title', 'CF')
             for mlwp in self.energy_data['mlwp_model'].unique():
                 data_subset = self.energy_data[self.energy_data['mlwp_model'] == mlwp]
                 y = data_subset['rmse'].values
-                label = f'Solar CF predicted from {mlwp}'
+                label = f'{short_title} predicted from {mlwp}'
                 if normalize_by_std and normalize_by_std > 0:
                     y = y / normalize_by_std
                     label += ' (normalized)'
@@ -807,9 +812,10 @@ class MLWPSeasonalPlotter:
                         color=season_colors[season], label=f'{season} (Persistence)')
         
         mlwp_names_str = ", ".join([name.upper() for name in self.mlwp_names])
+        short_title = self.config.get('short_title', 'CF')
         plt.title(f'Seasonal Performance: {mlwp_names_str} Model vs Persistence Baseline')
         plt.xlabel('Forecast Lead Time (Days)')
-        plt.ylabel('Solar Capacity Factor RMSE')
+        plt.ylabel(f'{short_title} RMSE')
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.grid(True, alpha=0.3)
         
@@ -820,7 +826,8 @@ class MLWPSeasonalPlotter:
         # Save plot
         if save_path is None:
             mlwp_names_str = "_".join(self.mlwp_names)
-            filename = f"{mlwp_names_str}_cf_rmse_seasonal.png"
+            short_title = self.config.get('short_title', 'cf')
+            filename = f"{mlwp_names_str}_{short_title}_rmse_seasonal.png"
             model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)
@@ -928,9 +935,10 @@ class MLWPRmseMaePlotter:
                 marker='s', linewidth=2.5, color='#ff7f0e', label='MAE')
         
         mlwp_names_str = ", ".join([name.upper() for name in self.mlwp_names])
+        short_title = self.config.get('short_title', 'CF')
         plt.title(f'Model Performance Comparison: {mlwp_names_str} RMSE vs MAE')
         plt.xlabel('Forecast Lead Time (Days)')
-        plt.ylabel('Solar Capacity Factor Error')
+        plt.ylabel(f'{short_title} Error')
         plt.legend()
         plt.grid(True, alpha=0.3)
         
@@ -941,7 +949,8 @@ class MLWPRmseMaePlotter:
         # Save plot
         if save_path is None:
             mlwp_names_str = "_".join(self.mlwp_names)
-            filename = f"{mlwp_names_str}_cf_rmse_mae.png"
+            short_title = self.config.get('short_title', 'cf')
+            filename = f"{mlwp_names_str}_{short_title}_rmse_mae.png"
             model_subdir = self.model_name
             plot_dir = self.study_dir / model_subdir
             plot_dir.mkdir(exist_ok=True)

@@ -258,7 +258,6 @@ def calculate_climatology_baseline(config: dict) -> float:
     # Load the full raw target dataset
     gt_file = PROJECT_ROOT / config['target_data_raw']
     full_df = pd.read_csv(gt_file, index_col='Date', parse_dates=True)
-    # Note: Raw data has 00:00 timestamps. Use processed labels for 12:00 timestamps.
     
     # Drop columns to match the model's target
     drop_cols = config.get('data_processing', {}).get('drop_columns', [])
@@ -269,8 +268,8 @@ def calculate_climatology_baseline(config: dict) -> float:
     test_years = config['split_years']['test']
     test_gt = full_df[full_df.index.year.isin(test_years)].dropna()
     
-    # Climatology baseline: use historical averages (1990-1999)
-    historical_data = full_df.loc['1990':'1999']
+    # Climatology baseline: use historical averages (1999-2009)
+    historical_data = full_df.loc['1999':'2009']
     daily_climatology = historical_data.groupby([historical_data.index.month, historical_data.index.day]).mean()
     daily_climatology.index.names = ['month', 'day']
     
